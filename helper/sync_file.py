@@ -1,5 +1,6 @@
 """The Gargoyle_Sync data addon the app writes, and what it reads from GargoyleDB: the
-signups made in game (the outbox) and the characters picked to keep up to date.
+signups made in game (the outbox), the raids officers made in game (newRaids) and the
+characters picked to keep up to date.
 
 The website's answer (/api/app/sync) becomes the GargoyleSync table that the Gargoyle
 addon reads at login (addon/Gargoyle/Core.lua, ns.ReadSync). Only the fields the addon
@@ -70,10 +71,12 @@ def _strings(table, value_type):
 def sync_table(api, done, imports=None):
     """GargoyleSync from the website's /api/app/sync answer, plus the outbox ids the
     website has answered ({id: "saved" / "stale" / ...}) so the addon can let them go, and
-    what the website said about each picked character ({key: "saved" / "limit" / ...})."""
+    what the website said about each picked character ({key: "saved" / "limit" / ...}).
+    can_make_raids tells the addon this app sends raids made in game (older ones don't)."""
     api = api if isinstance(api, dict) else {}
     return {
         "version": VERSION,
+        "can_make_raids": True,
         "synced": _int(api.get("time")),
         "user": _text(api.get("user"), 60),
         "characters": [x for x in map(_character, _list(api.get("characters"))) if x],
@@ -113,6 +116,20 @@ def outbox(saved):
                         "status": _text(a.get("status"), 10), "role": _text(a.get("role"), 10),
                         "note": _text(a.get("note"), 200) or "", "at": _int(a.get("at"))})
     return actions
+
+
+def new_raids(saved):
+    """Raids officers made in game and the website hasn't confirmed yet (GargoyleDB.newRaids),
+    as the website's /api/app/raids wants them, from a read GargoyleDB file."""
+    db = saved.get("GargoyleDB") if isinstance(saved, dict) else None
+    raids = []
+    for r in _list(db.get("newRaids")) if isinstance(db, dict) else []:
+        if not isinstance(r, dict) or not isinstance(r.get("id"), str) or not ACTION_ID.match(r["id"]):
+            continue
+        raids.append({"id": r["id"], "guild": _int(r.get("guild")), "title": _text(r.get("title"), 80) or "",
+                      "start": _int(r.get("start")), "size": _int(r.get("size")),
+                      "notes": _text(r.get("notes"), 1000) or "", "at": _int(r.get("at"))})
+    return raids
 
 
 def _parts(value, fields, limit):

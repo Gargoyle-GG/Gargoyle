@@ -175,6 +175,64 @@ def test_outbox_skips_ids_the_website_would_refuse():
     assert [a["id"] for a in sync_file.outbox(saved)] == ["ok-1"]
 
 
+def test_new_raids_from_saved_data():
+    saved = {"GargoyleDB": {"newRaids": [
+        {"id": "r1", "guild": 5, "title": "Molten Core" + "!" * 90, "start": 1_800_086_400, "size": 40, "notes": "N" * 1200,
+         "at": 1_800_000_000, "evil": "x"},
+        {"id": "r2", "guild": "5", "title": 7, "start": 1.5, "size": "forty"},  # (odd fields: the website says no)
+        {"id": "bad id!", "guild": 5}, {"id": 9}, "junk"]}}
+    one, two = sync_file.new_raids(saved)
+    assert one == {"id": "r1", "guild": 5, "title": ("Molten Core" + "!" * 90)[:80], "start": 1_800_086_400, "size": 40,
+                   "notes": "N" * 1000, "at": 1_800_000_000}
+    assert two == {"id": "r2", "guild": None, "title": "", "start": None, "size": None, "notes": "", "at": None}
+    assert sync_file.new_raids({"GargoyleDB": {"newRaids": "x"}}) == [] and sync_file.new_raids({}) == []
+    # The data file tells the addon this app sends them.
+    assert sync_file.sync_table({}, {})["can_make_raids"] is True
+
+
+def test_new_raids_are_sent_once_then_let_go(tmp_path, game_folder):
+    calls = []
+
+    class Answer:
+        status_code = 200
+
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+        def raise_for_status(self):
+            pass
+
+    class Http:
+        def request(self, method, url, headers=None, timeout=None, json=None):
+            calls.append((url.rsplit("/", 1)[1], json))
+            if url.endswith("/api/app/raids"):
+                return Answer({"results": [{"id": r["id"], "result": "saved", "raid": 77} for r in json["raids"]]})
+            if url.endswith("/api/app/signups"):
+                return Answer({"results": [{"id": a["id"], "result": "saved"} for a in json["actions"]]})
+            return Answer({"user": "A", "time": 1, "guilds": [{"id": 5, "name": "G", "raids": [
+                {"id": 77, "title": "Onyxia", "start": 1_900_000_000, "signups": []}]}]})
+
+    saved = game_folder / "WTF" / "Account" / "123#1" / "SavedVariables" / "Gargoyle.lua"
+    saved.write_text('GargoyleDB = { ["newRaids"] = { { ["id"] = "r1", ["guild"] = 5, ["title"] = "Onyxia", '
+                     '["start"] = 1900000000, ["at"] = 1800000000 } } }')
+    config = Config(tmp_path / "config.json")
+    config.data.update(site="https://gargoyle.gg", game_folder=str(game_folder))
+    config.token = "t"
+    syncer = Syncer(config, http=Http(), log=lambda text: None)
+    assert syncer.run() == "1 upcoming raid, 1 new raid sent"
+    assert [c[0] for c in calls] == ["raids", "sync"] and calls[0][1]["raids"][0]["title"] == "Onyxia"
+    assert syncer.table["done"] == {"r1": "saved"}  # (so the addon lets it go)
+    # The window: it's waiting until the website has answered, then it's the website's raid.
+    assert overview.raids(syncer.table, [], {}, 1_800_000_000, syncer.new_raids)[0]["made"]
+    assert [r.get("made") for r in overview.raids(syncer.table, [], config.get("sent"), 1_800_000_000, syncer.new_raids)] == [None]
+    calls.clear()
+    syncer.run()
+    assert [c[0] for c in calls] == ["sync"]  # not sent twice
+
+
 def test_answers_are_kept_even_if_fetching_fails(tmp_path, game_folder):
     calls = []
 
@@ -561,6 +619,15 @@ def test_the_raids_the_window_shows():
     assert (raid["title"], raid["guild"], raid["size"], raid["status"], raid["character"]) == ("Raid", "", None, None, None)
     assert overview.signup_text(raid) == "Not signed up"
     assert overview.raid_path({**mc, "guild_id": None}) is None and overview.raid_path({**mc, "id": "1#x"}) is None
+    # Raids made in game and not sent yet are listed too (with nothing to link to yet).
+    made = [{"id": "r1", "guild": 1, "title": "Onyxia", "start": NOW + 3600, "size": None},
+            {"id": "r2", "guild": 9, "title": "", "start": NOW + 3 * 86400, "size": 40},
+            {"id": "r3", "guild": 1, "title": "Sent", "start": NOW + 7200, "size": None}]
+    raids = overview.raids(sample_table(), [], {"r3": {"result": "saved"}}, NOW, made)
+    assert [r["title"] for r in raids] == ["Onyxia", "Molten Core", "Zul'Gurub", "Raid", "Blackwing Lair"]
+    ony = raids[0]
+    assert ony["made"] and ony["guild"] == "Stone Watch" and overview.signup_text(ony) == "New raid"
+    assert overview.raid_path(ony) is None and raids[3]["guild"] == ""
 
 
 def test_the_characters_the_window_shows():

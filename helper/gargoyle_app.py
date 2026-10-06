@@ -440,9 +440,12 @@ class App:
 
         # Waiting to send
         unsent = overview.unsent(syncer.actions, config.get("sent"))
+        unsent_raids = overview.unsent(syncer.new_raids, config.get("sent"))
         characters = overview.characters(syncer.picked, config.get("uploaded"))
         unsent_characters = [c for c in characters if c["state"] == "waiting"]
         parts = []
+        if unsent_raids:
+            parts.append(f"{len(unsent_raids)} new raid{'s' if len(unsent_raids) != 1 else ''}")
         if unsent:
             parts.append(f"{len(unsent)} signup{'s' if len(unsent) != 1 else ''}")
         if unsent_characters:
@@ -462,7 +465,7 @@ class App:
             self.banner.pack_forget()
 
         # The lists, rebuilt only when what they show has changed.
-        raids = overview.raids(syncer.table, syncer.actions, config.get("sent"), time.time())
+        raids = overview.raids(syncer.table, syncer.actions, config.get("sent"), time.time(), syncer.new_raids)
         key = (repr(raids), repr(characters), bool(config.token), time.strftime("%Y%m%d"))
         if key != self.shown_key:
             self.shown_key = key

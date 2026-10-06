@@ -25,7 +25,7 @@ local NOOP = { "SetSize", "SetWidth", "SetHeight", "ClearAllPoints", "SetAllPoin
   "EnableMouseWheel", "SetAutoFocus", "SetMaxLetters", "SetTextColor", "SetWordWrap", "SetToplevel", "SetTitle",
   "SetPortraitToAsset", "SetTexture", "SetTexCoord", "SetBlendMode", "SetVertexColor", "SetFrameLevel",
   "RegisterForClicks", "SetMaxLines", "AddMaskTexture", "SetLooping", "SetFromAlpha", "SetToAlpha", "SetDuration",
-  "SetSmoothing" }
+  "SetSmoothing", "Raise" }
 for _, name in ipairs(NOOP) do methods[name] = function() end end
 function methods:SetPoint(...) self.point = { ... } end
 function methods:GetWidth() return 140 end
@@ -62,6 +62,20 @@ function fake.choose(text) -- open the dropdown that offers it, and pick it
       w:GenerateMenu()
       for _, r in ipairs(w.radios) do
         if r.text:find(text, 1, true) then
+          r.setSelected(r.data)
+          showChoice(w)
+          return true
+        end
+      end
+    end
+  end
+end
+function fake.chooseIn(current, text) -- the dropdown showing `current`: pick exactly `text`
+  for _, w in ipairs(fake.widgets) do
+    if w.kind == "DropdownButton" and w:IsVisible() and w.enabled and w.text == current then
+      w:GenerateMenu()
+      for _, r in ipairs(w.radios) do
+        if r.text == text then
           r.setSelected(r.data)
           showChoice(w)
           return true
@@ -156,8 +170,36 @@ PanelTemplates_SelectTab = function(tab) tab.selected = true; tab:Disable() end
 PanelTemplates_DeselectTab = function(tab) tab.selected = false; tab:Enable() end
 UISpecialFrames = {}
 tinsert = table.insert
-time = function() return fake.now end
-date = os.date
+time = function(t) if t then return os.time(t) end return fake.now end
+date = function(format, t) return os.date(format, t or fake.now) end
+function methods:GetFrameLevel() return self.level or 1 end
+function methods:SetFrameLevel(level) self.level = level end
+-- hooksecurefunc("Name", fn): fn runs after the game's function, with the same arguments.
+hooksecurefunc = function(name, fn)
+  local original = _G[name]
+  _G[name] = function(...) original(...); fn(...) end
+end
+-- The game's calendar (Blizzard_Calendar, loaded when it's first opened): fake.openCalendar(year,
+-- month) loads it and shows that month, with the days before and after as the game does.
+function fake.openCalendar(year, month)
+  if not CalendarFrame then
+    CalendarFrame = fake.new("Frame", "CalendarFrame", UIParent)
+    for i = 1, 42 do fake.new("Button", "CalendarDayButton" .. i, CalendarFrame) end
+    CalendarFrame_Update = function()
+      local first = os.date("*t", os.time({ year = CalendarFrame.viewedYear, month = CalendarFrame.viewedMonth, day = 1, hour = 12 }))
+      local before = (first.wday - 1) -- (weeks start on Sunday)
+      for i = 1, 42 do
+        local d = os.date("*t", os.time({ year = first.year, month = first.month, day = i - before, hour = 12 }))
+        local button = _G["CalendarDayButton" .. i]
+        button.day = d.day
+        button.monthOffset = (d.month == first.month and 0) or ((d.year * 12 + d.month < first.year * 12 + first.month) and -1 or 1)
+      end
+    end
+    fake.fire("ADDON_LOADED", "Blizzard_Calendar")
+  end
+  CalendarFrame.viewedYear, CalendarFrame.viewedMonth = year, month
+  CalendarFrame_Update()
+end
 print = function(...) table.insert(fake.printed, table.concat({ ... }, " ")) end
 strtrim = function(s) return (s:gsub("^%%s+", ""):gsub("%%s+$", "")) end
 SlashCmdList = {}
@@ -314,6 +356,14 @@ class Game:
 
     def choose(self, text):
         assert self.fake.choose(text), f"no dropdown offers {text!r}"
+
+    def choose_in(self, current, text):
+        assert self.fake.chooseIn(current, text), f"no dropdown showing {current!r} offers {text!r}"
+
+    def type_in(self, n, text):
+        """Types into the n-th edit box on screen (0: the first)."""
+        boxes = [w for w in self.fake.widgets.values() if w.kind == "EditBox" and w.IsVisible(w)]
+        boxes[n].SetText(boxes[n], text)
 
     def dropdowns(self):
         return [w.text for w in self.fake.widgets.values() if w.kind == "DropdownButton" and w.IsVisible(w)]
@@ -627,7 +677,7 @@ def test_role_dropdown_shows_role_icons_and_a_typed_note_stays():
     assert [r.text for r in role.radios.values()] == [
         "|A:UI-LFG-RoleIcon-Tank-Micro-GroupFinder:16:16|a Tank", "|A:UI-LFG-RoleIcon-Healer-Micro-GroupFinder:16:16|a Healer",
         "|A:UI-LFG-RoleIcon-DPS-Micro-GroupFinder:16:16|a Damage"]
-    note = next(w for w in game.fake.widgets.values() if w.kind == "EditBox")
+    note = next(w for w in game.fake.widgets.values() if w.kind == "EditBox" and w.IsVisible(w))
     note.SetText(note, "bringing flasks")
     game.choose("Tank")
     game.click("Coming")
@@ -702,7 +752,7 @@ def test_text_is_cut_by_letters_not_bytes():
     game = Game(sync_lua(api, {}))
     game.slash()
     assert title[:80] in game.texts()  # (80 letters, the website's limit: not 80 bytes)
-    note = next(w for w in game.fake.widgets.values() if w.kind == "EditBox")
+    note = next(w for w in game.fake.widgets.values() if w.kind == "EditBox" and w.IsVisible(w))
     note.SetText(note, "é" * 199 + "😀🙂")
     game.click("Coming")
     assert game.outbox()[0]["note"] == "é" * 199 + "😀"
@@ -857,3 +907,181 @@ def test_old_and_odd_alert_records_are_dropped():
     in_game(game)
     assert dict(game.db.alerts.seen.items()) == {9: NOW}
     assert game.db.alerts.told[2] == NOW + 7 * 86400
+
+
+# ---- New raids made in game (officers) ----
+
+def officer(**changes):
+    """API, as an officer of the guild sees it."""
+    return {**API, "guilds": [{**API["guilds"][0], "officer": True, **changes}]}
+
+
+def local_start(days, hour, minute):
+    """A day from NOW (0: that day) at a time of day, in this PC's own time, as the addon works it out."""
+    import time as clock
+    today = clock.localtime(NOW)
+    return int(clock.mktime((today.tm_year, today.tm_mon, today.tm_mday + days, hour, minute, 0, 0, 0, -1)))
+
+
+def first_day():
+    """What the New raid form's Day shows when it opens: today, unless 20:00 has passed."""
+    return "Today" if local_start(0, 20, 0) > NOW else "Tomorrow"
+
+
+def made(game):
+    return [dict(r.items()) for r in game.db.newRaids.values()]
+
+
+def test_officers_make_raids_in_game():
+    game = Game(sync_lua(officer(), {}))
+    game.slash()
+    game.click("New raid")
+    assert "New raid" in game.texts() and game.fake.button("Coming") is None  # (the form, in place of the raid)
+    game.type_in(0, "  Zul'Gurub  ")
+    game.type_in(1, "Bring |cffff0000 nature resist")
+    game.choose_in(first_day(), "Tomorrow")
+    game.choose_in("20", "21")
+    game.choose_in("00", "30")
+    game.choose_in("Not set", "20 players")
+    assert "your time  ·  Knights of Forever  ·  20 players" in game.texts()
+    game.click("Make raid")
+    (raid,) = made(game)
+    assert (raid["guild"], raid["title"], raid["size"], raid["at"]) == (5, "Zul'Gurub", 20, NOW)
+    assert raid["start"] == local_start(1, 21, 30) and raid["notes"] == "Bring |cffff0000 nature resist"
+    assert raid["id"].startswith("r")
+    # It's in the list, waiting to sync, and open: no signing up until the website has it.
+    text = game.texts()
+    assert "Zul'Gurub" in text and "Waiting to sync" in text and "Made in game. It goes to the website" in text
+    assert "Bring ||cffff0000 nature resist" in text  # (shown as typed)
+    assert game.fake.button("Coming") is None and game.fake.button("Don't make it") is not None
+    assert "Waiting to sync: 1 new raid. Reload or log out to send." in text
+    assert "new raid saved. With the Gargoyle app running, click Reload UI" in game.printed()
+    # Changed your mind before reloading: take it back.
+    game.click("Don't make it")
+    assert made(game) == [] and "Zul'Gurub" not in game.texts() and "Molten Core" in game.texts()
+
+
+def test_new_raid_problems():
+    game = Game(sync_lua(officer(), {}))
+    game.slash()
+    game.click("New raid")
+    game.click("Make raid")
+    assert "Give the raid a name." in game.texts() and made(game) == []
+    game.type_in(0, "MC")
+    game.choose_in(first_day(), "Today")
+    game.choose_in("20", "00")
+    game.click("Make raid")  # (midnight today has passed)
+    assert "Pick a time that hasn't passed yet." in game.texts() and made(game) == []
+    game.click("Cancel")
+    assert "Bring fire resist" in game.texts()
+    # Not an officer: no button.
+    member = Game(sync_lua(API, {}))
+    member.slash()
+    assert member.fake.button("New raid") is None
+    # An app from before raids could be made in game: says to update it.
+    old = Game(sync_lua(officer(), {}).replace("can_make_raids", "something_else"))
+    old.slash()
+    old.click("New raid")
+    assert "making raids in game needs the newest Gargoyle app" in old.printed() and "Make raid" not in old.texts()
+
+
+def test_made_raids_after_a_sync():
+    start = NOW + 3 * 86400
+    saved = f"""GargoyleDB = {{ newRaids = {{
+      {{ id = "ra", guild = 5, title = "Onyxia", start = {start}, at = {NOW - 60} }},
+      {{ id = "rb", guild = 5, title = "AQ40", start = {start}, size = 40, at = {NOW - 50} }},
+      {{ id = "rc", guild = 5, title = "Naxx", start = {start + 3600}, notes = "", at = {NOW - 40} }},
+      {{ id = "rd", guild = 5, title = "Gone by", start = {NOW - 10}, at = {NOW - 9000} }},
+      {{ id = 7, guild = "x" }},
+    }} }}"""
+    onyxia = {"id": 9, "title": "Onyxia", "start": start, "size": None, "notes": "", "signups": []}
+    api = officer(raids=API["guilds"][0]["raids"] + [onyxia])
+    game = Game(sync_lua(api, {"ra": "saved", "rb": "full"}), saved)
+    assert [r["id"] for r in made(game)] == ["rc"]  # the started and the odd ones dropped too
+    assert "your new raid AQ40 wasn't made: the guild has as many upcoming raids as it can have." in game.printed()
+    assert game.db.alerts.seen[9] == start  # (you made it: not a "new raid" to tell you about)
+    in_game(game)
+    assert "Onyxia" not in game.lua.globals().GargoyleMinimapBubble.detail.text
+    game.slash()
+    assert "Naxx" in game.texts() and "Waiting to sync: 1 new raid" in game.texts()
+    naxx = next(w for w in game.fake.widgets.values() if w.kind == "Button" and w.raid and w.raid.title == "Naxx")
+    naxx.scripts.OnClick(naxx)
+    assert game.fake.button("Don't make it") is None  # (made before the reload: the app may have sent it)
+
+
+# ---- Raids on the game's calendar ----
+
+def calendar_day(game, when):
+    """The game's calendar opened on the month of `when` (seconds), and that day's button."""
+    import time as clock
+    day = clock.localtime(when)
+    game.fake.openCalendar(day.tm_year, day.tm_mon)
+    lua = game.lua.globals()
+    buttons = [lua["CalendarDayButton%d" % i] for i in range(1, 43)]
+    return next(b for b in buttons if b.day == day.tm_mday and b.monthOffset == 0)
+
+
+def mark_on(game, button):
+    find = game.lua.eval("function(b) for _, w in ipairs(fake.widgets) do if w.parent == b and w.kind == 'Button' then return w end end end")
+    return find(button)
+
+
+def test_raids_are_marked_on_the_game_calendar():
+    game = Game(sync_lua(API, {}))
+    mark = mark_on(game, calendar_day(game, NOW + 86400))
+    assert mark.shown and mark.count.text == ""
+    mark.scripts.OnEnter(mark)
+    lines = list(game.lua.globals().GameTooltip.lines.values())
+    assert lines[0] == "Gargoyle" and lines[1] == "Molten Core"
+    assert "Knights of Forever" in lines[2] and "Tentative" in lines[2] and lines[-1] == "Click to open it in Gargoyle."
+    # A click opens Gargoyle on that raid.
+    bwl = mark_on(game, calendar_day(game, NOW + 7 * 86400))
+    bwl.scripts.OnClick(bwl)
+    assert game.lua.globals().GargoyleWindow.shown and "|cff19ff19New|r  Blackwing Lair" in game.texts()
+    assert "No one is coming yet." in game.texts()  # (Blackwing Lair's details, not Molten Core's)
+    # Days without raids have no mark.
+    other = mark_on(game, calendar_day(game, NOW + 3 * 86400))
+    assert other is None or not other.shown
+    # Two raids on one day: a count.
+    api = {**API, "guilds": [{**API["guilds"][0], "raids": API["guilds"][0]["raids"] + [
+        {"id": 4, "title": "Onyxia", "start": NOW + 86400 + 60, "size": 40, "notes": "", "signups": []}]}]}
+    two = Game(sync_lua(api, {}))
+    mark = mark_on(two, calendar_day(two, NOW + 86400))
+    assert mark.count.text == "2" and len(mark.raids) == 2
+
+
+def test_calendar_marks_can_be_turned_off_and_follow_new_raids():
+    game = Game(sync_lua(officer(), {}))
+    button = calendar_day(game, NOW + 86400)
+    box = game.ns.calendarBox
+    assert box.checked
+    box.SetChecked(box, False)
+    box.scripts.OnClick(box)
+    assert game.db.calendar is False and not mark_on(game, button).shown
+    box.SetChecked(box, True)
+    box.scripts.OnClick(box)
+    assert game.db.calendar is None and mark_on(game, button).shown
+    # The raid feature off: no marks.
+    raids = game.ns.optionBoxes.raids
+    raids.SetChecked(raids, False)
+    raids.scripts.OnClick(raids)
+    assert not mark_on(game, button).shown
+    raids.SetChecked(raids, True)
+    raids.scripts.OnClick(raids)
+    # A raid made in game is marked straight away.
+    day = calendar_day(game, local_start(2, 20, 0))
+    assert mark_on(game, day) is None
+    game.slash()
+    game.click("New raid")
+    game.type_in(0, "Ruins of Ahn'Qiraj")
+    game.choose_in(first_day(), game.lua.eval("os.date('%a %d %b', " + str(local_start(2, 12, 0)) + ")"))
+    game.click("Make raid")
+    mark = mark_on(game, day)
+    assert mark.shown
+    mark.scripts.OnEnter(mark)
+    assert "Waiting to sync" in list(game.lua.globals().GameTooltip.lines.values())[2]
+
+
+def test_the_calendar_loaded_before_gargoyle():
+    game = Game(sync_lua(API, {}), "fake.openCalendar(2027, 1)")
+    assert mark_on(game, calendar_day(game, NOW + 86400)).shown

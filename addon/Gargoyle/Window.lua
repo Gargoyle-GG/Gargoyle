@@ -163,6 +163,7 @@ function ns.OpenWindow(key)
   if not window then create() end
   if key then current = key end
   window:Show()
+  window:Raise() -- (in front of the game's calendar, when opened from a mark on it)
   ns.RefreshWindow()
 end
 

@@ -39,16 +39,22 @@ def unsent(actions, sent):
     return [a for a in actions if a.get("id") not in sent]
 
 
-def raids(table, actions, sent, now):
+def raids(table, actions, sent, now, made=()):
     """Every upcoming raid in your guilds, soonest first: {id, title, guild, start, size,
-    status (None: not signed up), role, character, waiting (made in game, not sent yet)}."""
+    status (None: not signed up), role, character, waiting (a signup made in game, not sent
+    yet)}. Raids made in game and not sent yet (`made`, Syncer.new_raids) are in it too, with
+    made=True and no id."""
     table = _dict(table)
+    guild_names = {g.get("id"): _str(g.get("name")) for g in _list(table.get("guilds")) if isinstance(g, dict)}
+    found = [{"id": None, "title": r["title"] or "Raid", "guild": guild_names.get(r["guild"]) or "", "guild_id": r["guild"],
+              "start": r["start"], "size": r["size"], "status": None, "role": None, "character": None, "waiting": True,
+              "made": True}
+             for r in unsent(made, sent) if isinstance(r.get("start"), int) and r["start"] + RAID_LASTS >= now]
     names = {c.get("id"): c.get("name") for c in _list(table.get("characters")) if isinstance(c, dict) and isinstance(c.get("id"), int)}
     latest = {}
     for a in unsent(actions, sent):
         if isinstance(a.get("raid"), int) and (a["raid"] not in latest or (a.get("at") or 0) >= (latest[a["raid"]].get("at") or 0)):
             latest[a["raid"]] = a
-    found = []
     for guild in _list(table.get("guilds")):
         if not isinstance(guild, dict):
             continue
@@ -81,6 +87,8 @@ def raid_path(raid):
 
 def signup_text(raid):
     """"Coming as Healer on Jaina", "Not signed up", ..."""
+    if raid.get("made"):
+        return "New raid"
     status = STATUS.get(raid["status"])
     if not status:
         return "Not signed up"

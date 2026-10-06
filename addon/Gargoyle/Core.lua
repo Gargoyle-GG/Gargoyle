@@ -89,7 +89,9 @@ local function loadDB()
   local db = tableOr(GargoyleDB)
   db.modules = tableOr(db.modules)
   db.outbox = tableOr(db.outbox)
+  db.newRaids = tableOr(db.newRaids) -- raids made in game by officers, waiting to sync
   db.characters = tableOr(db.characters)
+  -- (db.calendar: false when Gargoyle's raids are kept off the game's calendar)
   db.minimap = tableOr(db.minimap) -- the minimap button: angle (degrees), hide
   -- Raid alerts (Modules/RaidAlerts.lua): newRaids, reminders (false = off), and the raids
   -- seen, told about and reminded of (raid id -> its start time).
@@ -164,6 +166,7 @@ function ns.ReadSync()
   if type(raw) ~= "table" or raw.version ~= 1 then return sync end
   sync.loaded = true
   sync.synced, sync.user = number(raw.synced), text(raw.user, 60)
+  sync.makesRaids = raw.can_make_raids == true -- (the app sends raids made in game; older ones don't)
   for _, c in ipairs(list(raw.characters)) do
     if type(c) == "table" and number(c.id) and text(c.name, 60) then
       sync.characters[#sync.characters + 1] = {
@@ -245,6 +248,7 @@ function ns.CreateOptions()
     function() return alerts.On("newRaids") end, function(on) alerts.SetOn("newRaids", on) end)
   ns.remindersBox = option("Remind me a day before a raid I haven't signed up for",
     function() return alerts.On("reminders") end, function(on) alerts.SetOn("reminders", on) end)
+  ns.calendarBox = option("Mark my guilds' raids on the game's calendar", ns.Calendar.On, ns.Calendar.SetOn)
   panel:SetScript("OnShow", function()
     for key, box in pairs(ns.optionBoxes) do box:SetChecked(ns.IsEnabled(key)) end
     for box, get in pairs(more) do box:SetChecked(get()) end

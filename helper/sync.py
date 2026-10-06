@@ -2,8 +2,8 @@
 
 - Linking: asks the website for a code, then waits until someone approves it (app_api.py).
 - Sending: reads the Gargoyle addon's saved file(s) when the game rewrites them (on
-  /reload or logout) and sends signups made in game that weren't sent yet, and the
-  characters picked in game whenever the addon has read them again.
+  /reload or logout) and sends signups and raids made in game that weren't sent yet, and
+  the characters picked in game whenever the addon has read them again.
 - Fetching: gets your raids from the website and writes them into the Gargoyle_Sync data
   addon, which the game loads the next time you log in or /reload.
 - Versions: reads which addon and app versions are current from the latest GitHub release,
@@ -32,6 +32,7 @@ from version import ADDON_SIGNING_KEY, APP_VERSION, RELEASES
 REFRESH_SECONDS = 300  # fetch raids at least this often
 SENT_KEEP_DAYS = 30
 BATCH = 50  # the website takes up to 50 signups at once
+RAID_BATCH = 20  # up to 20 raids made in game
 CHARACTER_BATCH = 10  # and up to 10 characters
 TIMEOUT = 20
 MAX_SAVED_BYTES = 20 * 1024 * 1024  # (lua_io's limit too; checked before the file is read in)
@@ -57,9 +58,9 @@ class Syncer:
         self.retry_at = 0  # after a failed try (offline), not before this
         self.talking = threading.Lock()  # (syncing, linking and update checks run side by side: one request at a time)
         # What the window shows: the GargoyleSync table last written for the game, and the
-        # signups and picked characters last read from the game's saved files.
+        # signups, raids made and picked characters last read from the game's saved files.
         self.table = None
-        self.actions, self.picked = [], []
+        self.actions, self.picked, self.new_raids = [], [], []
 
     # ---- Talking to the website ----
 
@@ -156,8 +157,9 @@ class Syncer:
 
     def read_saved(self):
         """From every WoW account's saved file: the in-game signups, the picked characters
-        (the latest copy of each), and the files' change times."""
-        actions, characters, stamps = {}, {}, {}
+        (the latest copy of each), and the files' change times. (The raids made in game go
+        in self.new_raids.)"""
+        actions, characters, stamps, raids = {}, {}, {}, {}
         for path in wow_paths.saved_files(self.game_folder):
             try:
                 info = path.stat()
@@ -170,10 +172,12 @@ class Syncer:
                 continue
             for action in sync_file.outbox(saved):
                 actions[action["id"]] = action
+            for raid in sync_file.new_raids(saved):
+                raids[raid["id"]] = raid
             for c in sync_file.characters(saved):
                 if c["key"] not in characters or c["at"] > characters[c["key"]]["at"]:
                     characters[c["key"]] = c
-        self.actions, self.picked = list(actions.values()), list(characters.values())
+        self.actions, self.picked, self.new_raids = list(actions.values()), list(characters.values()), list(raids.values())
         return self.actions, self.picked, stamps
 
     def load_last(self):
@@ -270,18 +274,21 @@ class Syncer:
         sent = {k: v for k, v in (stored if isinstance(stored, dict) else {}).items()
                 if isinstance(v, dict) and isinstance(v.get("result"), str)}
         new = [a for a in actions if a["id"] not in sent]
-        for i in range(0, len(new), BATCH):
-            answer = self._call("POST", "/api/app/signups", json={"actions": new[i:i + BATCH]})
-            for result in answer.get("results", []) if isinstance(answer, dict) else []:
-                if isinstance(result, dict) and isinstance(result.get("id"), str):
-                    sent[result["id"]] = {"result": str(result.get("result")), "at": int(time.time())}
-            self.config.set("sent", sent)  # kept straight away, so nothing is sent twice if the next step fails
+        made = [r for r in self.new_raids if r["id"] not in sent]
+        for path, key, items, batch in (("/api/app/signups", "actions", new, BATCH),
+                                        ("/api/app/raids", "raids", made, RAID_BATCH)):
+            for i in range(0, len(items), batch):
+                answer = self._call("POST", path, json={key: items[i:i + batch]})
+                for result in answer.get("results", []) if isinstance(answer, dict) else []:
+                    if isinstance(result, dict) and isinstance(result.get("id"), str):
+                        sent[result["id"]] = {"result": str(result.get("result")), "at": int(time.time())}
+                self.config.set("sent", sent)  # kept straight away, so nothing is sent twice if the next step fails
         imports, characters_saved = self.send_characters(characters)
         api = self._call("GET", "/api/app/sync")
         if not isinstance(api, dict):
             raise ValueError("the website's answer didn't make sense")
         # What the addon may let go of: everything answered that's still in an outbox.
-        waiting = {a["id"] for a in actions}
+        waiting = {a["id"] for a in actions} | {r["id"] for r in self.new_raids}
         done = {k: v["result"] for k, v in sent.items() if k in waiting}
         self.write_sync(api, done, imports)
         # Forget answers the addon has let go of, after a while.
@@ -291,7 +298,10 @@ class Syncer:
         guilds = api.get("guilds") if isinstance(api.get("guilds"), list) else []
         raids = sum(len(g.get("raids") or []) for g in guilds if isinstance(g, dict))
         saved = sum(1 for a in new if sent.get(a["id"], {}).get("result") == "saved")
+        made_saved = sum(1 for r in made if sent.get(r["id"], {}).get("result") == "saved")
         summary = f"{raids} upcoming raid{'s' if raids != 1 else ''}"
+        if made_saved:
+            summary += f", {made_saved} new raid{'s' if made_saved != 1 else ''} sent"
         if saved:
             summary += f", {saved} signup{'s' if saved != 1 else ''} sent"
         if characters_saved:

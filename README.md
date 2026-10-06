@@ -3,9 +3,10 @@
 The in-game addon and the desktop app for [Gargoyle](https://gargoyle.gg), the companion
 site for WoW Forever. Free, like everything on Gargoyle.
 
-- **The addon** (`addon/Gargoyle`) shows your guild's upcoming raids in game, who's signed up,
-  and lets you sign up (Coming / Tentative / Can't come) without leaving WoW. It can also keep
-  the characters you pick up to date on your Gargoyle account.
+- **The addon** (`addon/Gargoyle`) shows your guild's upcoming raids in game (and marks them on
+  the game's calendar), who's signed up, and lets you sign up (Coming / Tentative / Can't come)
+  without leaving WoW. Guild officers can make new raids in game. It can also keep the
+  characters you pick up to date on your Gargoyle account.
 - **The app** (`helper/`) carries things between the game and the website, because addons
   can't go online. It also installs the addon and keeps it up to date.
 
@@ -17,8 +18,8 @@ what you can read here.
 ## What the app does and doesn't do
 
 - It reads the Gargoyle addon's own saved file (`WTF\Account\...\SavedVariables\Gargoyle.lua`)
-  after you `/reload` or log out, and sends the signups you made in game and the characters you
-  picked to your Gargoyle account.
+  after you `/reload` or log out, and sends the signups and raids you made in game and the
+  characters you picked to your Gargoyle account.
 - It writes your guild's raids into a small data addon (`Interface\AddOns\Gargoyle_Sync`), which
   the game loads the next time you log in or `/reload`.
 - It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`) from these releases,
