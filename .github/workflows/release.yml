@@ -1,0 +1,63 @@
+# Builds a release from this repo's code whenever a version tag (v...) is pushed, and posts
+# the installer, the addon zip, the signed addon manifest and versions.json (what the app
+# reads to find updates) as a GitHub release. Everything in a release is built here, in the
+# open, from the tagged code. The build stops unless the addon matches the manifest signed
+# with Gargoyle's release key (helper/signing.py), which never comes near GitHub.
+#
+# Locked down: actions pinned to exact commits, every Python package checked against its
+# SHA-256 (requirements-build.txt), Inno Setup at a fixed version, and the tag name only
+# ever used as data.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: windows-2025
+    permissions:
+      contents: write  # (only to create the release)
+    steps:
+      - name: Check the tag
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install what the build needs (exact files, checked)
+        run: python -m pip install --require-hashes --only-binary=:all: -r requirements-build.txt
+
+      - name: Install Inno Setup 6.7.1
+        shell: pwsh
+        run: |
+          choco install innosetup --version=6.7.1 -y --no-progress
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup didn't install" }
+
+      - name: Test
+        run: python -m pytest -q tests
+
+      - name: Build (stops unless the signed addon manifest matches)
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python helper/build.py --tag "$env:TAG"
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$env:TAG" dist/GargoyleSetup.exe dist/Gargoyle-addon.zip dist/versions.json `
+            dist/addon-manifest.json dist/addon-manifest.sig --title "Gargoyle $env:TAG" --generate-notes --verify-tag

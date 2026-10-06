@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: Gargoyle
+## Notes: Your guild's raids and signups in game (with a heads-up about new raids and a reminder before raids you haven't signed up for), and your characters kept up to date on your Gargoyle account. Open it with the minimap button or /gargoyle. Each feature can be turned on or off in Options > AddOns > Gargoyle.
+## Author: Gargoyle
+## Version: 0.4.0
+## SavedVariables: GargoyleDB
+## OptionalDeps: Gargoyle_Sync
+## IconTexture: Interface\Icons\Spell_Shadow_RaiseDead
+## AddonCompartmentFunc: Gargoyle_OnAddonCompartmentClick
+
+Core.lua
+Window.lua
+MinimapButton.lua
+Modules\Raids.lua
+Modules\RaidAlerts.lua
+Modules\Characters.lua
+Debug.lua

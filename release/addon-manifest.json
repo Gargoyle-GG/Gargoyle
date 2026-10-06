@@ -1,0 +1,14 @@
+{
+ "files": {
+  "Gargoyle/Core.lua": "39e2de93367ecbd452b03421a9135e387cc97f23f5569c67dcbcc9a018cd0eb2",
+  "Gargoyle/Debug.lua": "7425d7d992b7adfd4b4d210050c86afda8eddf133001f695aec8f980ce913218",
+  "Gargoyle/Gargoyle.toc": "b0072cb19fd84c1a49eb7a0d31c57b3ed629175499975eb0b7eeca3a401ba4a2",
+  "Gargoyle/MinimapButton.lua": "f8498f6dd2a5336ac3d3a85ea1169a04e09d119f2c089a2ae55677898eec53d1",
+  "Gargoyle/Modules/Characters.lua": "3681e375420d472a2508d89d0a5c6063e963c5ab76171229a1a66ebfb738f059",
+  "Gargoyle/Modules/RaidAlerts.lua": "1a17d6f51d0f061d5008dbc4b396a6c70e1b598901c9371ff54698705d6acc2a",
+  "Gargoyle/Modules/Raids.lua": "112936a5d96e64952cfbc8fbe52e484bbf14c510ae3f6a70ee30ca2859d277c4",
+  "Gargoyle/Window.lua": "11c29e58c64617bf7f71a562d979bd7c159458e5303805cc0f5d8a8d6ce42f43"
+ },
+ "tag": "v1.2.0-addon0.4.0",
+ "version": "0.4.0"
+}

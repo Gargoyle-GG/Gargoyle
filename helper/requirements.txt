@@ -1,0 +1,4 @@
+# The Gargoyle app (helper/): what it needs to run from source.
+requests>=2.31
+pystray>=0.19
+pillow>=10

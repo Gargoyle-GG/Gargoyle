@@ -1,0 +1,55 @@
+# Gargoyle addon and app
+
+The in-game addon and the desktop app for [Gargoyle](https://gargoyle.gg), the companion
+site for WoW Forever. Free, like everything on Gargoyle.
+
+- **The addon** (`addon/Gargoyle`) shows your guild's upcoming raids in game, who's signed up,
+  and lets you sign up (Coming / Tentative / Can't come) without leaving WoW. It can also keep
+  the characters you pick up to date on your Gargoyle account.
+- **The app** (`helper/`) carries things between the game and the website, because addons
+  can't go online. It also installs the addon and keeps it up to date.
+
+**Download:** [the latest release](../../releases/latest) (`GargoyleSetup.exe`), or from
+[gargoyle.gg/addon](https://gargoyle.gg/addon). Every release is built by GitHub from the code
+in this repository ([how](.github/workflows/release.yml)), so what you download is exactly
+what you can read here.
+
+## What the app does and doesn't do
+
+- It reads the Gargoyle addon's own saved file (`WTF\Account\...\SavedVariables\Gargoyle.lua`)
+  after you `/reload` or log out, and sends the signups you made in game and the characters you
+  picked to your Gargoyle account.
+- It writes your guild's raids into a small data addon (`Interface\AddOns\Gargoyle_Sync`), which
+  the game loads the next time you log in or `/reload`.
+- It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`) from these releases,
+  but only if every file matches a manifest signed with Gargoyle's release key, which is kept
+  offline and never on GitHub (see [SECURITY.md](SECURITY.md)).
+- It never touches the running game, its memory, or any other game files, and it never plays
+  for you. The addon only shows things and records your own clicks.
+- It talks to `gargoyle.gg` (your raids and signups) and to GitHub (updates), nothing else.
+  Your account link is a token stored encrypted with Windows' own per-user protection.
+- It runs in the tray when you close its window, and only starts with Windows if you turn
+  that on.
+
+## Building it yourself
+
+Needs Python 3.12 and [Inno Setup 6](https://jrsoftware.org/isinfo.php) on Windows.
+
+```
+python -m pip install -r requirements-build.txt
+python -m pytest tests
+python helper/build.py
+```
+
+The installer, the addon zip and `versions.json` end up in `dist/`. To run the app from the
+code instead: `python helper/gargoyle_app.py`.
+
+## Questions and bugs
+
+Open an issue here. Security problems: please report them privately (see
+[SECURITY.md](SECURITY.md)). Code contributions aren't accepted at the moment.
+
+## License
+
+All rights reserved: you're welcome to read the code and use the official releases, but not
+to copy or republish it. See [LICENSE](LICENSE).

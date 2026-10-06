@@ -1,0 +1,110 @@
+; The Gargoyle app's installer (Inno Setup 6), built by tools/build_downloads.py:
+;   ISCC.exe /DAppVersion=1.2.0 /DSource=<the PyInstaller GargoyleApp folder> /O<output folder> installer.iss
+;
+; Installs for the current Windows user only (no admin rights) into
+; %LOCALAPPDATA%\Programs\Gargoyle, with a Start menu shortcut, optionally a desktop
+; shortcut and starting with Windows, and an uninstaller in Windows' Apps list. Running a
+; newer GargoyleSetup.exe updates it in place, closing the running app first.
+; The app's own settings (%APPDATA%\Gargoyle) are left alone by updates and uninstalling.
+
+#ifndef AppVersion
+  #error Pass /DAppVersion=x.y.z
+#endif
+#ifndef Source
+  #error Pass /DSource=<the PyInstaller GargoyleApp folder>
+#endif
+
+[Setup]
+; (Never change AppId: it's how a new version finds the one already installed.)
+AppId={{6E3B1F0A-5C2D-4B8E-9A47-2F1D8C3E7B90}
+AppName=Gargoyle
+AppVersion={#AppVersion}
+AppVerName=Gargoyle {#AppVersion}
+AppPublisher=Gargoyle
+AppPublisherURL=https://gargoyle.gg
+VersionInfoVersion={#AppVersion}
+DefaultDirName={localappdata}\Programs\Gargoyle
+DisableProgramGroupPage=yes
+DisableDirPage=yes
+DisableReadyPage=yes
+PrivilegesRequired=lowest
+OutputBaseFilename=GargoyleSetup
+SetupIconFile=assets\gargoyle.ico
+UninstallDisplayIcon={app}\GargoyleApp.exe
+UninstallDisplayName=Gargoyle
+WizardStyle=modern
+Compression=lzma2/max
+SolidCompression=yes
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+; A running Gargoyle is asked to quit before its files are replaced (CloseGargoyle below;
+; Windows' own closing is the fallback), and is started again afterwards.
+CloseApplications=force
+RestartApplications=no
+
+[Tasks]
+Name: "desktopicon"; Description: "Put a Gargoyle shortcut on the desktop"; Flags: unchecked
+Name: "startup"; Description: "Start Gargoyle when Windows starts (it waits quietly in the tray)"; Flags: unchecked
+
+[InstallDelete]
+; The old version's libraries go before the new ones are copied in.
+Type: filesandordirs; Name: "{app}\_internal"
+
+[Files]
+Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{autoprograms}\Gargoyle"; Filename: "{app}\GargoyleApp.exe"
+Name: "{autodesktop}\Gargoyle"; Filename: "{app}\GargoyleApp.exe"; Tasks: desktopicon
+
+[Registry]
+; The same per-user entry the app's own "Start with Windows" switch uses (helper/startup.py).
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Gargoyle"; ValueData: """{app}\GargoyleApp.exe"" --tray"; Tasks: startup
+; Removed when Gargoyle is uninstalled, however it was turned on.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Gargoyle"; Flags: uninsdeletevalue
+
+[Run]
+Filename: "{app}\GargoyleApp.exe"; Description: "Open Gargoyle"; Flags: nowait postinstall skipifsilent
+; (After a quiet update, Gargoyle comes back by itself.)
+Filename: "{app}\GargoyleApp.exe"; Parameters: "--tray"; Flags: nowait; Check: WizardSilent
+
+[Code]
+// Before installing over it or uninstalling it: a running Gargoyle (maybe waiting in the
+// tray) is asked to quit, by leaving a "quit" file in its settings folder that it looks for
+// every second. Only if it hasn't gone after a few seconds is it closed by force.
+procedure CloseGargoyle();
+var
+  Code, I: Integer;
+  QuitFile: String;
+begin
+  if not CheckForMutexes('GargoyleApp') then
+    exit;
+  QuitFile := ExpandConstant('{userappdata}\Gargoyle\quit');
+  SaveStringToFile(QuitFile, 'quit', False);
+  for I := 1 to 50 do begin
+    if not CheckForMutexes('GargoyleApp') then
+      break;
+    Sleep(100);
+  end;
+  if CheckForMutexes('GargoyleApp') then
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM GargoyleApp.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  DeleteFile(QuitFile);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  CloseGargoyle();
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    CloseGargoyle();
+  // Settings, and this PC's link to the account, are kept (installing again picks them up)
+  // unless you say otherwise. Quiet uninstalls keep them.
+  if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
+    if MsgBox('Also remove Gargoyle''s settings from this PC, including its link to your Gargoyle account?' + #13#10#13#10 +
+              'Choose No to keep them for next time.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      DelTree(ExpandConstant('{userappdata}\Gargoyle'), True, True, True);
+end;
