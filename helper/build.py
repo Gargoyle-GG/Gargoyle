@@ -86,7 +86,8 @@ def check_signed(tag):
     from version import ADDON_SIGNING_KEY
     folder = ROOT / "release"
     try:
-        body = (folder / signing.MANIFEST).read_bytes()
+        # (as signed: "\n" line endings, whatever a checkout did to them)
+        body = (folder / signing.MANIFEST).read_bytes().replace(b"\r\n", b"\n")
         signature = (folder / signing.SIGNATURE).read_bytes()
     except OSError:
         sys.exit("No signed addon manifest in release/: tag releases with tools/publish_public.py --release.")

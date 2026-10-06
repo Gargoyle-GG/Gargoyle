@@ -1,6 +1,6 @@
 """The Gargoyle app's version. Raise it for every app release (helper/build.py reads it, and
 the release's tag is made from it), so the apps already out there can say a new one is ready."""
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 # Where the app and the addon are released: GitHub builds both from the public source code
 # there (helper/build.py, run by .github/workflows/release.yml) and posts them as a release.

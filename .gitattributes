@@ -1,0 +1,2 @@
+# The signed release files reach the build byte for byte: git mustn't change their line endings.
+release/** -text

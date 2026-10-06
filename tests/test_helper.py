@@ -677,6 +677,10 @@ def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, rele
     (tmp_path / "release" / "addon-manifest.json").write_bytes(body)
     (tmp_path / "release" / "addon-manifest.sig").write_bytes(release_key(body))
     assert build.check_signed(tag)[0] == body
+    # A checkout with Windows line endings still passes (git may convert them).
+    (tmp_path / "release" / "addon-manifest.json").write_bytes(body.replace(b"\n", b"\r\n"))
+    assert build.check_signed(tag)[0] == body
+    (tmp_path / "release" / "addon-manifest.json").write_bytes(body)
     with pytest.raises(SystemExit, match="isn't the addon"):
         build.check_signed("v0.0.1-addon0.0.1")
     (tmp_path / "release" / "addon-manifest.sig").write_bytes(release_key(b"something else"))
