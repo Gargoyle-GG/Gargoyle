@@ -1,14 +1,15 @@
 """Installing and updating the Gargoyle addon, and noticing a new Gargoyle app.
 
 Both are released on GitHub, built there from the public source code (helper/build.py).
-Each release has a versions.json saying what's in it: the release's tag, and the addon's
-and app's versions, file names, sizes and SHA-256. The addon download is checked against
-those before anything is unpacked, every file in it has to sit inside a Gargoyle folder,
+Each release has a versions.json saying what's in it: the release's tag, and the addons'
+and app's versions, file names, sizes and SHA-256. An addon download is checked against
+those before anything is unpacked, every file in it has to sit inside that addon's folder,
 and the old copy is only swapped out once the new one is fully unpacked next to it.
-Nothing but Interface\\AddOns\\Gargoyle is touched. The app itself isn't replaced: it says
-a new version is out, and its download is the installer.
+Nothing but Interface\\AddOns\\Gargoyle and (when it's ticked in the app's Settings)
+Interface\\AddOns\\Gargoyle_Tooltips is touched. The app itself isn't replaced: it says a new
+version is out, and its download is the installer.
 
-A Gargoyle folder that's a link (a developer's copy linked from elsewhere) is never updated.
+An addon folder that's a link (a developer's copy linked from elsewhere) is never updated.
 """
 
 import hashlib
@@ -24,6 +25,8 @@ from urllib.parse import urlsplit
 from version import RELEASES
 
 NAME = "Gargoyle"
+TOOLTIPS = "Gargoyle_Tooltips"  # (Gargoyle Damage Tooltips, its own addon, installed if wanted)
+ADDONS = {"addon": NAME, "tooltips": TOOLTIPS}  # (its key in versions.json: its folder)
 MAX_DOWNLOAD = 10 * 1024 * 1024
 MAX_UNPACKED = 20 * 1024 * 1024
 MAX_FILES = 500
@@ -46,9 +49,9 @@ def addons(game_folder):
     return Path(game_folder) / "Interface" / "AddOns"
 
 
-def installed_version(game_folder):
-    """The "## Version:" of the installed addon, or None if it isn't installed."""
-    toc = addons(game_folder) / NAME / "Gargoyle.toc"
+def installed_version(game_folder, name=NAME):
+    """The "## Version:" of an installed addon, or None if it isn't installed."""
+    toc = addons(game_folder) / name / f"{name}.toc"
     try:
         text = toc.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -96,10 +99,11 @@ def _file(versions, key, extensions):
     return {**entry, "tag": tag, "url": f"{RELEASES}/download/{tag}/{name}"} if ok else None
 
 
-def offer(versions):
-    """The addon in the latest release ({version, file, size, sha256, url}), checked, or None."""
-    addon = _file(versions, "addon", (".zip",))
-    return addon if addon and addon["size"] <= MAX_DOWNLOAD else None
+def offer(versions, key="addon"):
+    """An addon in the latest release ({version, file, size, sha256, url, key, name}), checked,
+    or None. `key`: "addon" (Gargoyle) or "tooltips" (Gargoyle_Tooltips)."""
+    addon = _file(versions, key, (".zip",)) if key in ADDONS else None
+    return {**addon, "key": key, "name": ADDONS[key]} if addon and addon["size"] <= MAX_DOWNLOAD else None
 
 
 def app_update(versions, current):
@@ -125,47 +129,49 @@ def check_download(data, addon):
         raise InstallError("the download didn't arrive whole; trying again later")
 
 
-def _members(archive):
-    """The zip's files, each checked to unpack inside the Gargoyle folder."""
+def _members(archive, name):
+    """The zip's files, each checked to unpack inside the addon's folder."""
     infos, total = [], 0
     for info in archive.infolist():
         path = PurePosixPath(info.filename.replace("\\", "/"))
         parts = path.parts
-        if (not parts or parts[0] != NAME or info.filename.startswith(("/", "\\")) or ":" in info.filename
+        if (not parts or parts[0] != name or info.filename.startswith(("/", "\\")) or ":" in info.filename
                 or any(not SAFE_NAME.match(p) or DEVICE.match(p) for p in parts)):
             raise InstallError(f"the download has an unexpected file ({info.filename[:60]})")
         total += info.file_size
         infos.append((info, parts[1:]))
     if len(infos) > MAX_FILES or total > MAX_UNPACKED:
         raise InstallError("the download is bigger than expected")
-    if not any(parts == ("Gargoyle.toc",) for _, parts in infos):
-        raise InstallError("the download isn't the Gargoyle addon")
+    if not any(parts == (f"{name}.toc",) for _, parts in infos):
+        raise InstallError(f"the download isn't the {name} addon")
     return infos
 
 
-def unpacked(folder):
-    """{"Gargoyle/...": sha256} for every file in an unpacked copy of the addon."""
-    return {"/".join((NAME,) + path.relative_to(folder).parts): hashlib.sha256(path.read_bytes()).hexdigest()
+def unpacked(folder, name=NAME):
+    """{"Gargoyle/...": sha256} for every file in an unpacked copy of an addon."""
+    return {"/".join((name,) + path.relative_to(folder).parts): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in folder.rglob("*") if path.is_file()}
 
 
-def install(game_folder, data, signed):
-    """Unpacks the addon zip into Interface\\AddOns\\Gargoyle, replacing the copy there, but
+def install(game_folder, data, signed, name=NAME):
+    """Unpacks an addon zip into Interface\\AddOns\\<name>, replacing the copy there, but
     only if what's unpacked is exactly the files in the signed manifest (signing.verify):
     nothing missing, nothing extra, nothing changed. Returns the version installed."""
-    target = addons(game_folder) / NAME
+    if name not in ADDONS.values():
+        raise InstallError(f"{name[:40]} isn't a Gargoyle addon")
+    target = addons(game_folder) / name
     if is_linked(target):
-        raise InstallError("the Gargoyle addon folder is a link to a copy elsewhere, so it's left alone")
+        raise InstallError(f"the {name} addon folder is a link to a copy elsewhere, so it's left alone")
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise InstallError("the download isn't a zip file") from None
-    new, old = target.with_name(NAME + ".new"), target.with_name(NAME + ".old")
+    new, old = target.with_name(name + ".new"), target.with_name(name + ".old")
     for leftover in (new, old):  # (from an update that was cut short)
         if leftover.exists() and not is_linked(leftover):
             shutil.rmtree(leftover, ignore_errors=True)
     with archive:
-        members = _members(archive)
+        members = _members(archive, name)
         new.mkdir(parents=True)
         inside = new.resolve()
         try:
@@ -186,7 +192,7 @@ def install(game_folder, data, signed):
             raise InstallError(f"unpacking it didn't work ({exc.__class__.__name__})") from None
     # What's on disk now has to be exactly what Gargoyle's release key signed.
     try:
-        same = isinstance(signed, dict) and unpacked(new) == signed.get("files")
+        same = isinstance(signed, dict) and unpacked(new, name) == signed.get("files")
     except OSError:
         same = False
     if not same:
@@ -204,4 +210,47 @@ def install(game_folder, data, signed):
         raise InstallError(f"a file is in use, so it couldn't be replaced ({exc.__class__.__name__}); "
                            "trying again later") from None
     shutil.rmtree(old, ignore_errors=True)
-    return installed_version(game_folder)
+    return installed_version(game_folder, name)
+
+
+def uninstall(game_folder, name):
+    """Takes an optional addon (Damage tooltips) out of the game again, when it's unticked in
+    the app. Only that addon's own folder, and never a linked one. True if it was there."""
+    if name != TOOLTIPS:
+        raise InstallError(f"{name[:40]} isn't an optional addon")
+    target = addons(game_folder) / name
+    if is_linked(target):
+        raise InstallError(f"the {name} addon folder is a link to a copy elsewhere, so it's left alone")
+    if not target.is_dir():
+        return False
+    old = target.with_name(name + ".old")
+    if old.exists() and not is_linked(old):
+        shutil.rmtree(old, ignore_errors=True)
+    try:
+        os.replace(target, old)  # (so a file in use leaves the addon whole, not half gone)
+    except OSError as exc:
+        raise InstallError(f"a file is in use, so it couldn't be removed ({exc.__class__.__name__}); "
+                           "trying again later") from None
+    shutil.rmtree(old, ignore_errors=True)
+    return True
+
+
+CHOICES = "choices.ini"  # (in the app's folder, written by the installer: helper/installer.iss)
+
+
+def installer_choice(app_folder):
+    """The installer's "Also install Damage tooltips" tick (True or False), or None if the
+    installer didn't leave one. Taken once: the file goes after it's read, so a later change
+    in the app's Settings sticks (until the next install asks again)."""
+    path = Path(app_folder) / CHOICES
+    try:
+        raw = path.read_bytes()[:8192]
+        text = raw.decode("utf-16" if raw.startswith(b"\xff\xfe") else "utf-8-sig", errors="replace")
+    except OSError:
+        return None
+    match = re.search(r"^\s*tooltips\s*=\s*([01])\s*$", text, re.M)
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return None if match is None else match.group(1) == "1"

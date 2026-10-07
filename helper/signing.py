@@ -20,6 +20,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MANIFEST = "addon-manifest.json"
 SIGNATURE = "addon-manifest.sig"
+# Each addon's own manifest and signature ("addon": Gargoyle, "tooltips": Gargoyle_Tooltips).
+MANIFESTS = {"addon": (MANIFEST, SIGNATURE), "tooltips": ("tooltips-manifest.json", "tooltips-manifest.sig")}
 TEXT = {".lua", ".toc", ".xml", ".txt", ".md"}
 
 
@@ -34,7 +36,7 @@ def normalized(name, data):
 
 def manifest(tag, version, files):
     """The manifest's exact bytes: {tag, version, files: {"Gargoyle/...": sha256}}, from
-    {"Gargoyle/...": released bytes}."""
+    {"Gargoyle/...": released bytes} (one addon's files)."""
     body = {"tag": tag, "version": version,
             "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}}
     return (json.dumps(body, indent=1, sort_keys=True) + "\n").encode("utf-8")

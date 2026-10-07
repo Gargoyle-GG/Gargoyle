@@ -7,8 +7,13 @@ site for WoW Forever. Free, like everything on Gargoyle.
   the game's calendar), who's signed up, and lets you sign up (Coming / Tentative / Can't come)
   without leaving WoW. Guild officers can make new raids in game. It can also keep the
   characters you pick up to date on your Gargoyle account.
+- **Damage tooltips** (`addon/Gargoyle_Tooltips`), a separate addon you can choose to install,
+  add a breakdown of your spells' damage and healing to their tooltips: base numbers, your
+  spell power's share, your talents, crit, and the average per cast, per second and per mana.
+  Its data (`Data/<Class>.lua`) is made from the website's spell math. It's turned on or off
+  in Gargoyle's options.
 - **The app** (`helper/`) carries things between the game and the website, because addons
-  can't go online. It also installs the addon and keeps it up to date.
+  can't go online. It also installs the addons and keeps them up to date.
 
 **Download:** [the latest release](../../releases/latest) (`GargoyleSetup.exe`), or from
 [gargoyle.gg/addon](https://gargoyle.gg/addon). Every release is built by GitHub from the code
@@ -22,9 +27,11 @@ what you can read here.
   characters you picked to your Gargoyle account.
 - It writes your guild's raids into a small data addon (`Interface\AddOns\Gargoyle_Sync`), which
   the game loads the next time you log in or `/reload`.
-- It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`) from these releases,
-  but only if every file matches a manifest signed with Gargoyle's release key, which is kept
-  offline and never on GitHub (see [SECURITY.md](SECURITY.md)).
+- It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`), and Damage tooltips
+  (`Interface\AddOns\Gargoyle_Tooltips`) if you ticked them, from these releases, but only if
+  every file matches a manifest signed with Gargoyle's release key, which is kept offline and
+  never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking Damage tooltips removes that
+  addon's folder again.
 - It never touches the running game, its memory, or any other game files, and it never plays
   for you. The addon only shows things and records your own clicks.
 - It talks to `gargoyle.gg` (your raids and signups) and to GitHub (updates), nothing else.

@@ -111,8 +111,9 @@ class Syncer:
         """The release's signed addon manifest (signing.py), checked against the release
         key, for the addon `offer` (addon_install.offer). SignatureError if it isn't right."""
         base = f"{RELEASES}/download/{offer['tag']}/"
-        body = self.fetch(base + signing.MANIFEST, 256 * 1024)
-        signature = self.fetch(base + signing.SIGNATURE, 1024)
+        manifest, signature_file = signing.MANIFESTS[offer.get("key", "addon")]
+        body = self.fetch(base + manifest, 256 * 1024)
+        signature = self.fetch(base + signature_file, 1024)
         signed = signing.verify(body, signature, ADDON_SIGNING_KEY)
         if signed["version"] != offer["version"] or signed["tag"] != offer["tag"]:
             raise signing.SignatureError("the signed manifest is for a different release")

@@ -1,19 +1,21 @@
-"""Builds a Gargoyle release into dist/: the addon zip, the app's installer, and
+"""Builds a Gargoyle release into dist/: the two addons' zips (Gargoyle, and Gargoyle
+Damage Tooltips, which the app installs when it's ticked), the app's installer, and
 versions.json (what the app reads to find updates). GitHub runs this from the public source
 code for every release (.github/workflows/release.yml), so anyone can see exactly what the
 downloads are made from.
 
-    python helper/build.py --tag v1.2.0-addon0.4.0     (everything)
-    python helper/build.py --addon                     (just the addon zip)
+    python helper/build.py --tag v1.4.0-addon0.6.0-tips1.0.0     (everything)
+    python helper/build.py --addon                               (just the addon zips)
 
 The app is packaged with PyInstaller as a folder with GargoyleApp.exe in it (a single-file
 exe is slower to start and more often mistaken for malware by antivirus programs), then
 turned into GargoyleSetup.exe by Inno Setup 6 (helper/installer.iss).
 
-A release also needs release/addon-manifest.json and .sig, made and signed with Gargoyle's
-release key before the release is tagged (helper/signing.py). The build stops unless that
-manifest is exactly the addon it just built and the signature checks out against the key
-in helper/version.py, so a release can't go out with an addon the key didn't sign.
+A release also needs each addon's manifest and signature in release/ (addon-manifest.json
+and .sig, tooltips-manifest.json and .sig), made and signed with Gargoyle's release key
+before the release is tagged (helper/signing.py). The build stops unless each manifest is
+exactly the addon it just built and the signature checks out against the key in
+helper/version.py, so a release can't go out with an addon the key didn't sign.
 """
 import argparse
 import hashlib
@@ -30,11 +32,14 @@ ROOT = Path(__file__).resolve().parent.parent
 HELPER = ROOT / "helper"
 sys.path.insert(0, str(HELPER))
 import signing  # noqa: E402
-ADDON = ROOT / "addon" / "Gargoyle"
+ADDON_FOLDERS = ROOT / "addon"
+ADDON = ADDON_FOLDERS / "Gargoyle"
 OUT = ROOT / "dist"
 WORK = ROOT / "build"
 ADDON_ZIP = "Gargoyle-addon.zip"
 SETUP = "GargoyleSetup.exe"
+# The addons in a release: versions.json's key for each, its folder, and its zip.
+ADDONS = {"addon": ("Gargoyle", ADDON_ZIP), "tooltips": ("Gargoyle_Tooltips", "Gargoyle_Tooltips-addon.zip")}
 
 VERSION_INFO = """VSVersionInfo(
   ffi=FixedFileInfo(filevers={nums}, prodvers={nums}),
@@ -48,8 +53,9 @@ VERSION_INFO = """VSVersionInfo(
 """
 
 
-def addon_version():
-    toc = (ADDON / "Gargoyle.toc").read_text(encoding="utf-8")
+def addon_version(key="addon"):
+    name = ADDONS[key][0]
+    toc = (ADDON_FOLDERS / name / f"{name}.toc").read_text(encoding="utf-8")
     return re.search(r"^##\s*Version:\s*(\S+)", toc, re.M).group(1)
 
 
@@ -58,7 +64,7 @@ def app_version():
 
 
 def release_tag():
-    return f"v{app_version()}-addon{addon_version()}"
+    return f"v{app_version()}-addon{addon_version()}-tips{addon_version('tooltips')}"
 
 
 def entry(path, version):
@@ -66,47 +72,54 @@ def entry(path, version):
     return {"version": version, "file": path.name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
 
-def addon_files():
-    """{"Gargoyle/...": bytes} for every file of the addon, as released (signing.normalized)."""
+def addon_files(key="addon"):
+    """{"Gargoyle/...": bytes} for every file of an addon, as released (signing.normalized)."""
+    folder_name = ADDONS[key][0]
+    folder = ADDON_FOLDERS / folder_name
     files = {}
-    for path in sorted(ADDON.rglob("*")):
+    for path in sorted(folder.rglob("*")):
         if path.is_file() and "__pycache__" not in path.parts:
-            name = f"Gargoyle/{path.relative_to(ADDON).as_posix()}"
+            name = f"{folder_name}/{path.relative_to(folder).as_posix()}"
             files[name] = signing.normalized(name, path.read_bytes())
     return files
 
 
-def addon_manifest(tag):
-    """The addon's manifest for a release (what gets signed)."""
-    return signing.manifest(tag, addon_version(), addon_files())
+def addon_manifest(tag, key="addon"):
+    """An addon's manifest for a release (what gets signed)."""
+    return signing.manifest(tag, addon_version(key), addon_files(key))
 
 
 def check_signed(tag):
-    """The release's signed manifest, checked against the addon and the release key."""
+    """The release's signed manifests, checked against the addons and the release key:
+    {key: (manifest, signature)}."""
     from version import ADDON_SIGNING_KEY
     folder = ROOT / "release"
-    try:
-        # (as signed: "\n" line endings, whatever a checkout did to them)
-        body = (folder / signing.MANIFEST).read_bytes().replace(b"\r\n", b"\n")
-        signature = (folder / signing.SIGNATURE).read_bytes()
-    except OSError:
-        sys.exit("No signed addon manifest in release/: tag releases with tools/publish_public.py --release.")
-    if body != addon_manifest(tag):
-        sys.exit("release/addon-manifest.json isn't the addon in this code at this tag.")
-    try:
-        signing.verify(body, signature, ADDON_SIGNING_KEY)
-    except signing.SignatureError as exc:
-        sys.exit(f"The addon manifest's signature doesn't check out: {exc}.")
-    return body, signature
+    signed = {}
+    for key in ADDONS:
+        manifest, signature_file = signing.MANIFESTS[key]
+        try:
+            # (as signed: "\n" line endings, whatever a checkout did to them)
+            body = (folder / manifest).read_bytes().replace(b"\r\n", b"\n")
+            signature = (folder / signature_file).read_bytes()
+        except OSError:
+            sys.exit(f"No signed {manifest} in release/: tag releases with tools/publish_public.py --release.")
+        if body != addon_manifest(tag, key):
+            sys.exit(f"release/{manifest} isn't the {ADDONS[key][0]} addon in this code at this tag.")
+        try:
+            signing.verify(body, signature, ADDON_SIGNING_KEY)
+        except signing.SignatureError as exc:
+            sys.exit(f"The {manifest} signature doesn't check out: {exc}.")
+        signed[key] = (body, signature)
+    return signed
 
 
-def build_addon(out=OUT):
-    """Zips the addon so it unzips as Gargoyle/... (files in a fixed order with fixed dates,
+def build_addon(out=OUT, key="addon"):
+    """Zips an addon so it unzips as Gargoyle/... (files in a fixed order with fixed dates,
     so the same code gives the same zip)."""
     out.mkdir(parents=True, exist_ok=True)
-    target = out / ADDON_ZIP
+    target = out / ADDONS[key][1]
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, data in addon_files().items():
+        for name, data in addon_files(key).items():
             info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             z.writestr(info, data)
@@ -154,17 +167,19 @@ def main():
     parser.add_argument("--addon", action="store_true", help="only zip the addon")
     args = parser.parse_args()
     shutil.rmtree(OUT, ignore_errors=True)
-    addon = build_addon()
+    zips = {key: build_addon(key=key) for key in ADDONS}
     if args.addon:
         return
     tag = args.tag or release_tag()
     if tag != release_tag():
         sys.exit(f"The tag {tag} doesn't match the versions in the code ({release_tag()}).")
-    body, signature = check_signed(tag)
-    (OUT / signing.MANIFEST).write_bytes(body)
-    (OUT / signing.SIGNATURE).write_bytes(signature)
+    for key, (body, signature) in check_signed(tag).items():
+        manifest, signature_file = signing.MANIFESTS[key]
+        (OUT / manifest).write_bytes(body)
+        (OUT / signature_file).write_bytes(signature)
     setup = build_app()
-    versions = {"tag": tag, "addon": entry(addon, addon_version()), "app": entry(setup, app_version())}
+    versions = {"tag": tag, **{key: entry(path, addon_version(key)) for key, path in zips.items()},
+                "app": entry(setup, app_version())}
     (OUT / "versions.json").write_text(json.dumps(versions, indent=1), encoding="utf-8")
     print(json.dumps(versions, indent=1))
 

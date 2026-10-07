@@ -423,8 +423,14 @@ def test_versions():
     assert addon_install.app_update({}, "1.1.0") is None and addon_install.app_update("junk", "1.1.0") is None
     assert addon_install.app_download(release()) == f"{RELEASES}/download/v9.1.0-addon9.0.0/GargoyleSetup.exe"
     good = release()
-    assert addon_install.offer(good) == {**good["addon"], "tag": "v9.1.0-addon9.0.0",
+    assert addon_install.offer(good) == {**good["addon"], "tag": "v9.1.0-addon9.0.0", "key": "addon", "name": "Gargoyle",
                                          "url": f"{RELEASES}/download/v9.1.0-addon9.0.0/Gargoyle-addon.zip"}
+    # Damage tooltips: its own entry (not there in releases before it).
+    tips = offer_for(b"tips", "1.0.0", "Gargoyle_Tooltips-addon.zip")
+    assert addon_install.offer({**good, "tooltips": tips}, "tooltips") == {
+        **tips, "tag": "v9.1.0-addon9.0.0", "key": "tooltips", "name": "Gargoyle_Tooltips",
+        "url": f"{RELEASES}/download/v9.1.0-addon9.0.0/Gargoyle_Tooltips-addon.zip"}
+    assert addon_install.offer(good, "tooltips") is None and addon_install.offer({**good, "app": tips}, "app") is None
     for bad in ({"file": "../x.zip"}, {"file": "x.exe"}, {"file": "a/b.zip"}, {"sha256": "abc"},
                 {"size": addon_install.MAX_DOWNLOAD + 1}, {"size": "3"}, {"size": True}, {"version": "new"}):
         assert addon_install.offer({**good, "addon": {**good["addon"], **bad}}) is None
@@ -531,7 +537,15 @@ def test_building_the_addon_zip(tmp_path):
     entry = build.entry(tmp_path / "a" / "Gargoyle-addon.zip", build.addon_version())
     tag = build.release_tag()
     assert addon_install.offer({"tag": tag, "addon": entry})["version"] == build.addon_version()
-    assert tag == f"v{build.app_version()}-addon{build.addon_version()}"
+    assert tag == f"v{build.app_version()}-addon{build.addon_version()}-tips{build.addon_version('tooltips')}"
+    # Damage tooltips: their own zip, unpacking as Gargoyle_Tooltips/...
+    tips = build.build_addon(tmp_path / "a", "tooltips")
+    with zipfile.ZipFile(tips) as z:
+        names = z.namelist()
+        assert "Gargoyle_Tooltips/Gargoyle_Tooltips.toc" in names and "Gargoyle_Tooltips/Data/Mage.lua" in names
+        assert all(n.startswith("Gargoyle_Tooltips/") for n in names)
+        assert json.loads(build.addon_manifest("t", "tooltips"))["files"] == {
+            n: hashlib.sha256(z.read(n)).hexdigest() for n in names}
 
 
 def test_syncing_needs_the_addon_installed(tmp_path):
@@ -737,19 +751,31 @@ def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, rele
     spec.loader.exec_module(build)
     monkeypatch.setattr(build, "ROOT", tmp_path)
     tag = build.release_tag()
-    with pytest.raises(SystemExit, match="No signed addon manifest"):
+    with pytest.raises(SystemExit, match="No signed addon-manifest.json"):
         build.check_signed(tag)
     (tmp_path / "release").mkdir()
     body = build.addon_manifest(tag)
     (tmp_path / "release" / "addon-manifest.json").write_bytes(body)
     (tmp_path / "release" / "addon-manifest.sig").write_bytes(release_key(body))
-    assert build.check_signed(tag)[0] == body
+    with pytest.raises(SystemExit, match="No signed tooltips-manifest.json"):  # (both addons are signed)
+        build.check_signed(tag)
+    tips = build.addon_manifest(tag, "tooltips")
+    (tmp_path / "release" / "tooltips-manifest.json").write_bytes(tips)
+    (tmp_path / "release" / "tooltips-manifest.sig").write_bytes(release_key(tips))
+    assert build.check_signed(tag)["addon"][0] == body and build.check_signed(tag)["tooltips"][0] == tips
+    # Each manifest is its own addon's: swapping them doesn't pass.
+    (tmp_path / "release" / "tooltips-manifest.json").write_bytes(body)
+    (tmp_path / "release" / "tooltips-manifest.sig").write_bytes(release_key(body))
+    with pytest.raises(SystemExit, match="isn't the Gargoyle_Tooltips addon"):
+        build.check_signed(tag)
+    (tmp_path / "release" / "tooltips-manifest.json").write_bytes(tips)
+    (tmp_path / "release" / "tooltips-manifest.sig").write_bytes(release_key(tips))
     # A checkout with Windows line endings still passes (git may convert them).
     (tmp_path / "release" / "addon-manifest.json").write_bytes(body.replace(b"\n", b"\r\n"))
-    assert build.check_signed(tag)[0] == body
+    assert build.check_signed(tag)["addon"][0] == body
     (tmp_path / "release" / "addon-manifest.json").write_bytes(body)
-    with pytest.raises(SystemExit, match="isn't the addon"):
-        build.check_signed("v0.0.1-addon0.0.1")
+    with pytest.raises(SystemExit, match="isn't the Gargoyle addon"):
+        build.check_signed("v0.0.1-addon0.0.1-tips0.0.1")
     (tmp_path / "release" / "addon-manifest.sig").write_bytes(release_key(b"something else"))
     with pytest.raises(SystemExit, match="signature"):
         build.check_signed(tag)
@@ -779,3 +805,99 @@ def test_signatures():
 def hashlib_sha256(data):
     import hashlib
     return hashlib.sha256(data).hexdigest()
+
+
+# ---- Damage tooltips: a second addon, installed when ticked ----
+
+def tips_zip(version=None):
+    """Gargoyle Damage Tooltips zipped like helper/build.py does."""
+    import io
+    import zipfile
+    folder = PROJECT / "addon" / "Gargoyle_Tooltips"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for path in sorted(folder.rglob("*")):
+            if path.is_file():
+                text = path.read_bytes()
+                if version and path.name == "Gargoyle_Tooltips.toc":
+                    text = re.sub(rb"## Version: \S+", b"## Version: " + version.encode(), text)
+                z.writestr("Gargoyle_Tooltips/" + path.relative_to(folder).as_posix(), text)
+    return buffer.getvalue()
+
+
+def test_installing_and_removing_damage_tooltips(tmp_path, game_folder):
+    tips = tips_zip(version="1.0.0")
+    addons = game_folder / "Interface" / "AddOns"
+    assert addon_install.installed_version(game_folder, addon_install.TOOLTIPS) is None
+    assert addon_install.install(game_folder, tips, signed_for(tips, "1.0.0"), addon_install.TOOLTIPS) == "1.0.0"
+    assert (addons / "Gargoyle_Tooltips" / "Data" / "Mage.lua").is_file() and (addons / "Gargoyle" / "Gargoyle.toc").is_file()
+    # Each addon's zip only goes in its own folder, and only Gargoyle's addons are installed.
+    gargoyle = addon_zip()
+    for data, name in ((gargoyle, addon_install.TOOLTIPS), (tips, addon_install.NAME), (tips, "Other")):
+        with pytest.raises(addon_install.InstallError):
+            addon_install.install(game_folder, data, signed_for(data), name)
+    # Unticked: the folder goes; Gargoyle's own can't be removed this way.
+    assert addon_install.uninstall(game_folder, addon_install.TOOLTIPS) is True
+    assert not (addons / "Gargoyle_Tooltips").exists() and not (addons / "Gargoyle_Tooltips.old").exists()
+    assert addon_install.uninstall(game_folder, addon_install.TOOLTIPS) is False
+    with pytest.raises(addon_install.InstallError):
+        addon_install.uninstall(game_folder, addon_install.NAME)
+    assert (addons / "Gargoyle" / "Gargoyle.toc").is_file()
+
+
+def test_the_installers_tooltips_tick(tmp_path):
+    assert addon_install.installer_choice(tmp_path) is None
+    (tmp_path / "choices.ini").write_text("[addons]\ntooltips=1\n")
+    assert addon_install.installer_choice(tmp_path) is True and not (tmp_path / "choices.ini").exists()
+    (tmp_path / "choices.ini").write_bytes("[addons]\r\ntooltips=0\r\n".encode("utf-16"))
+    assert addon_install.installer_choice(tmp_path) is False
+    (tmp_path / "choices.ini").write_text("[addons]\ntooltips=maybe\n")
+    assert addon_install.installer_choice(tmp_path) is None and not (tmp_path / "choices.ini").exists()
+
+
+def test_the_app_installs_ticked_damage_tooltips(tmp_path, game_folder, release_key):
+    pytest.importorskip("tkinter")
+    import json
+    import queue
+    import types
+    import gargoyle_app
+    installed = addon_install.installed_version(game_folder)
+    tag = "v9.1.0-addon9.0.0-tips1.0.0"
+
+    def github(tips_version):
+        tips = tips_zip(version=tips_version)
+        body = signing.manifest(tag, tips_version, {n: d for n, d in zip_files(tips).items()})
+        versions = {**release(addon_version=installed, tag=tag),
+                    "tooltips": offer_for(tips, tips_version, "Gargoyle_Tooltips-addon.zip")}
+        return FakeGitHub({"versions.json": json.dumps(versions).encode(), "Gargoyle_Tooltips-addon.zip": tips,
+                           "tooltips-manifest.json": body, "tooltips-manifest.sig": release_key(body)})
+
+    config = Config(tmp_path / "config.json")
+    config.data.update(game_folder=str(game_folder))
+    app = types.SimpleNamespace(events=queue.Queue(), config=config, checking=True, next_version_check=0, versions={})
+    app._update_addon = lambda *args: gargoyle_app.App._update_addon(app, *args)
+
+    def check(tips_version, install=False):
+        app.syncer = Syncer(config, http=github(tips_version), log=lambda text: None)
+        gargoyle_app.App._check_versions(app, install)
+        said = []
+        while not app.events.empty():
+            event = app.events.get()
+            said += [event[1]] if event[0] == "log" else []
+        return " ".join(said), addon_install.installed_version(game_folder, addon_install.TOOLTIPS)
+
+    assert check("1.0.0") == ("", None)  # (not ticked)
+    config.set("tooltips", True)
+    said, version = check("1.0.0")
+    assert version == "1.0.0" and "Installed the Damage tooltips addon 1.0.0." in said
+    config.set("auto_update", False)
+    assert check("1.1.0")[1] == "1.0.0"  # (updates switched off: waits for a click)
+    said, version = check("1.1.0", install=True)
+    assert version == "1.1.0" and "Updated the Damage tooltips addon to 1.1.0." in said
+
+
+def zip_files(data):
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        return {n: z.read(n) for n in z.namelist() if not n.endswith("/")}

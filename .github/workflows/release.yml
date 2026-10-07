@@ -1,8 +1,9 @@
 # Builds a release from this repo's code whenever a version tag (v...) is pushed, and posts
-# the installer, the addon zip, the signed addon manifest and versions.json (what the app
-# reads to find updates) as a GitHub release. Everything in a release is built here, in the
-# open, from the tagged code. The build stops unless the addon matches the manifest signed
-# with Gargoyle's release key (helper/signing.py), which never comes near GitHub.
+# the installer, the two addon zips (Gargoyle and Gargoyle Damage Tooltips), their signed
+# manifests and versions.json (what the app reads to find updates) as a GitHub release.
+# Everything in a release is built here, in the open, from the tagged code. The build stops
+# unless each addon matches its manifest signed with Gargoyle's release key
+# (helper/signing.py), which never comes near GitHub.
 #
 # Locked down: actions pinned to exact commits, every Python package checked against its
 # SHA-256 (requirements-build.txt), Inno Setup at a fixed version, and the tag name only
@@ -26,7 +27,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+-tips\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -50,7 +51,7 @@ jobs:
         run: |
           python -m pytest -q tests
 
-      - name: Build (stops unless the signed addon manifest matches)
+      - name: Build (stops unless the signed addon manifests match)
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -62,5 +63,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$env:TAG" dist/GargoyleSetup.exe dist/Gargoyle-addon.zip dist/versions.json `
-            dist/addon-manifest.json dist/addon-manifest.sig --title "Gargoyle $env:TAG" --generate-notes --verify-tag
+          gh release create "$env:TAG" dist/GargoyleSetup.exe dist/Gargoyle-addon.zip dist/Gargoyle_Tooltips-addon.zip `
+            dist/versions.json dist/addon-manifest.json dist/addon-manifest.sig dist/tooltips-manifest.json `
+            dist/tooltips-manifest.sig --title "Gargoyle $env:TAG" --generate-notes --verify-tag

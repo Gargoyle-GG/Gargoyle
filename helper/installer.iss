@@ -45,6 +45,7 @@ RestartApplications=no
 [Tasks]
 Name: "desktopicon"; Description: "Put a Gargoyle shortcut on the desktop"; Flags: unchecked
 Name: "startup"; Description: "Start Gargoyle when Windows starts (it waits quietly in the tray)"; Flags: unchecked
+Name: "tooltips"; Description: "Also install Damage tooltips: a breakdown of your spells' damage and healing on their tooltips in game (turn it on or off in game in Gargoyle's options)"
 
 [InstallDelete]
 ; The old version's libraries go before the new ones are copied in.
@@ -52,6 +53,12 @@ Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[INI]
+; The "Also install Damage tooltips" tick, for the app to read once (addon_install.installer_choice):
+; the app installs that addon itself, from Gargoyle's signed release, like the Gargoyle addon.
+Filename: "{app}\choices.ini"; Section: "addons"; Key: "tooltips"; String: "1"; Tasks: tooltips; Flags: uninsdeletesection
+Filename: "{app}\choices.ini"; Section: "addons"; Key: "tooltips"; String: "0"; Tasks: not tooltips; Flags: uninsdeletesection
 
 [Icons]
 Name: "{autoprograms}\Gargoyle"; Filename: "{app}\GargoyleApp.exe"

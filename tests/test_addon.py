@@ -11,6 +11,7 @@ from lupa import lua51  # noqa: E402
 
 PROJECT = Path(__file__).resolve().parent.parent
 ADDON = PROJECT / "addon" / "Gargoyle"
+TOOLTIPS = PROJECT / "addon" / "Gargoyle_Tooltips"
 sys.path.insert(0, str(PROJECT / "helper"))
 from sync_file import sync_lua  # noqa: E402
 
@@ -293,6 +294,30 @@ function fake.runTimers()
   fake.timers = {}
   for _, fn in ipairs(due) do fn() end
 end
+-- What Gargoyle Damage Tooltips reads: the character's spell damage (by school), healing,
+-- crit, attack power and weapon damage, and a spell's cast time and cost.
+fake.stats = { spellDamage = {}, healing = 0, spellCrit = 0, crit = 0, ap = 0, weapon = { 0, 0 } }
+fake.castTimes, fake.costs, fake.tooltipHooks = {}, {}, {}
+GetSpellBonusDamage = function(school) return fake.stats.spellDamage[school] or 0 end
+GetSpellBonusHealing = function() return fake.stats.healing end
+GetSpellCritChance = function() return fake.stats.spellCrit end
+GetCritChance = function() return fake.stats.crit end
+GetRangedCritChance = function() return fake.stats.crit end
+UnitAttackPower = function() return fake.stats.ap, 0, 0 end
+UnitRangedAttackPower = function() return fake.stats.ap, 0, 0 end
+UnitDamage = function() return fake.stats.weapon[1], fake.stats.weapon[2] end
+UnitRangedDamage = function() return 3, fake.stats.weapon[1], fake.stats.weapon[2] end
+C_Spell.GetSpellInfo = function(id) return { spellID = id, castTime = fake.castTimes[id] or 0 } end
+C_Spell.GetSpellPowerCost = function(id) return fake.costs[id] and { { type = 0, name = "MANA", cost = fake.costs[id] } } or {} end
+Enum = { TooltipDataType = { Item = 0, Spell = 1 } }
+TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn) fake.tooltipHooks[kind] = fn end }
+function GameTooltip:AddDoubleLine(left, right) table.insert(self.lines, left .. " | " .. right) end
+function fake.spellTooltip(spellID) -- hover a spell: the tooltip's lines
+  GameTooltip:SetOwner(UIParent)
+  GameTooltip:SetText("A spell")
+  if fake.tooltipHooks[1] then fake.tooltipHooks[1](GameTooltip, { type = 1, id = spellID }) end
+  return table.concat(GameTooltip.lines, "\n")
+end
 Settings = {
   RegisterCanvasLayoutCategory = function(panel, name) return { name = name, GetID = function() return 7 end } end,
   RegisterAddOnCategory = function(category) fake.category = category end,
@@ -321,7 +346,7 @@ API = {  # what /api/app/sync answers (see app_api.py)
 
 
 class Game:
-    def __init__(self, sync=None, saved=None, now=NOW):
+    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False):
         self.lua = lua51.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(FAKE_GAME)
         self.fake = self.lua.globals().fake
@@ -337,6 +362,13 @@ class Game:
             if name and not name.startswith("#"):
                 run((ADDON / name.replace("\\", "/")).read_text(encoding="utf-8"), name, self.ns)
         self.fake.fire("ADDON_LOADED", "Gargoyle")
+        if tooltips:  # (the game loads it after Gargoyle: its name comes later)
+            self.tips_ns = self.lua.table()
+            toc = (TOOLTIPS / "Gargoyle_Tooltips.toc").read_text(encoding="utf-8").splitlines()
+            for name in (line.strip() for line in toc):
+                if name and not name.startswith("#"):
+                    run((TOOLTIPS / name.replace("\\", "/")).read_text(encoding="utf-8"), name, self.tips_ns)
+            self.fake.fire("ADDON_LOADED", "Gargoyle_Tooltips")
         self.fake.fire("PLAYER_LOGIN")
 
     @property
@@ -1085,3 +1117,109 @@ def test_calendar_marks_can_be_turned_off_and_follow_new_raids():
 def test_the_calendar_loaded_before_gargoyle():
     game = Game(sync_lua(API, {}), "fake.openCalendar(2027, 1)")
     assert mark_on(game, calendar_day(game, NOW + 86400)).shown
+
+
+# ---- Gargoyle Damage Tooltips (addon/Gargoyle_Tooltips) ----
+
+def tooltip_game(**kw):
+    game = Game(tooltips=True, **kw)
+    game.lua.execute("""
+        fake.char.talents = { { { "Arcane Instability", 1, 1, 3, 3, 15058 } }, {},
+                              { { "Piercing Ice", 1, 1, 3, 3, 11151 }, { "Ice Shards", 1, 2, 5, 5, 11207 } } }
+        fake.stats.spellDamage[5] = 200   -- (Frost)
+        fake.stats.spellCrit = 10
+        fake.castTimes[116], fake.costs[116] = 1500, 25
+    """)
+    return game
+
+
+def test_frostbolt_breakdown():
+    game = tooltip_game()
+    text = game.fake.spellTooltip(116)  # Frostbolt rank 1: 20 to 22, 40.7% of spell damage
+    # (20 + 81.4) x 1.06 Piercing Ice x 1.03 Arcane Instability; crits do 200% with Ice Shards.
+    assert text.splitlines() == [
+        "A spell", " ", "Direct damage · Frost",
+        "Base | 20 – 22",
+        "Spell damage 200 × 40.7% | +81",
+        "Talents | × 1.09",
+        "  Arcane Instability +3%, Piercing Ice +6%",
+        "Total damage | 111 – 113",
+        "Crit 10% for 200% | avg 123",
+        "Average damage per cast | 123",
+        "Per second of casting (1.5 sec) | 82",
+        "Per mana (25 mana) | 4.92",
+    ]
+
+
+def test_talents_are_read_again_after_they_change():
+    game = tooltip_game()
+    assert "Piercing Ice" in game.fake.spellTooltip(116)
+    game.lua.execute("fake.char.talents[3] = {}")
+    assert "Piercing Ice" in game.fake.spellTooltip(116)  # (until the game says they changed)
+    game.fake.fire("TRAIT_CONFIG_UPDATED")
+    text = game.fake.spellTooltip(116)
+    assert "Piercing Ice" not in text and "Crit 10% for 150% | avg 111" in text
+
+
+def test_spells_without_a_breakdown_and_secret_numbers_add_nothing():
+    game = tooltip_game()
+    assert game.fake.spellTooltip(1) == "A spell"  # (not a spell it knows)
+    game.lua.execute("issecretvalue = function(v) return v == 116 end")
+    assert game.fake.spellTooltip(116) == "A spell"
+    game.lua.execute("issecretvalue = function() return false end; GetSpellBonusDamage = function() error('boom') end")
+    assert game.fake.spellTooltip(116) == "A spell"  # (a problem adds nothing, half or otherwise)
+
+
+def test_turned_on_and_off_in_gargoyles_options():
+    game = tooltip_game()
+    box = game.ns.tooltipsBox
+    assert box.enabled and box.GetChecked(box)
+    box.SetChecked(box, False)
+    box.scripts.OnClick(box)
+    assert game.lua.globals().GargoyleTooltipsDB.on is False
+    assert game.fake.spellTooltip(116) == "A spell"
+    box.SetChecked(box, True)
+    box.scripts.OnClick(box)
+    assert "Average damage per cast" in game.fake.spellTooltip(116)
+
+
+def test_switched_off_stays_off_after_a_reload():
+    game = tooltip_game(saved="GargoyleTooltipsDB = { on = false }")
+    assert not game.ns.tooltipsBox.GetChecked(game.ns.tooltipsBox)
+    assert game.fake.spellTooltip(116) == "A spell"
+
+
+def test_gargoyle_without_damage_tooltips_says_how_to_get_them():
+    game = Game()
+    box = game.ns.tooltipsBox
+    assert not box.enabled and not box.GetChecked(box)
+    assert "Damage tooltips aren't loaded (install them from the Gargoyle app's Settings" in game.texts()
+
+
+def test_only_your_own_classs_data_is_kept():
+    game = tooltip_game()
+    data = game.tips_ns.data
+    assert data.MAGE is not None and data.WARLOCK is None and data.PRIEST is None
+
+
+@pytest.mark.parametrize("token", ["DRUID", "HUNTER", "MAGE", "PALADIN", "PRIEST", "ROGUE", "SHAMAN", "WARLOCK", "WARRIOR"])
+def test_every_spell_of_every_class_has_a_breakdown(token):
+    game = Game(tooltips=False)
+    game.lua.execute("""
+        UnitClass = function() return "X", "%s", 1 end
+        fake.stats = { spellDamage = { 300, 300, 300, 300, 300, 300, 300 }, healing = 500, spellCrit = 8, crit = 12,
+                       ap = 1200, weapon = { 150, 250 } }
+    """ % token)
+    tips = game.lua.table()
+    run = game.lua.eval('function(src, name, ns) local f = assert(loadstring(src, "@" .. name)); f("Gargoyle_Tooltips", ns) end')
+    for name in (line.strip() for line in (TOOLTIPS / "Gargoyle_Tooltips.toc").read_text(encoding="utf-8").splitlines()):
+        if name and not name.startswith("#"):
+            run((TOOLTIPS / name.replace("\\\\", "/").replace("\\", "/")).read_text(encoding="utf-8"), name, tips)
+    lines = game.lua.eval("function(id) local ok, lines = pcall(GargoyleTooltips.Lines, id); assert(ok, lines); return lines end")
+    spells = getattr(tips.data, token).spells
+    assert len(list(spells.keys())) > 10
+    for spell_id in spells.keys():
+        result = lines(spell_id)
+        assert result is not None, spell_id
+        rows = [r[1] for r in result.values()]
+        assert any(r.startswith("Average") for r in rows), (spell_id, rows)

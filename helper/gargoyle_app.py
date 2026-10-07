@@ -193,6 +193,11 @@ class App:
     def __init__(self, root, hidden=False):
         self.root = root
         self.config = Config()
+        # The installer's "Also install Damage tooltips" tick (when it was just run).
+        if getattr(sys, "frozen", False):
+            choice = addon_install.installer_choice(Path(sys.executable).parent)
+            if choice is not None:
+                self.config.set("tooltips", choice)
         self.events = queue.Queue()  # from the worker threads (and the tray) to the window
         self.busy = self.linking = self.checking = False
         self.problem = None  # why the last sync didn't work, if it didn't
@@ -329,6 +334,10 @@ class App:
         self.tray_box.pack(anchor="w", pady=(px(4), 0))
         checkbox(page, "Keep the Gargoyle addon up to date", self.auto_update,
                  self.set_auto_update).pack(anchor="w", pady=(px(4), 0))
+        self.tooltips_on = tk.BooleanVar(value=self.config.get("tooltips") is True)
+        checkbox(page, "Also install Damage tooltips (a breakdown of your spells' damage and healing on their "
+                 "tooltips in game; turn it on or off in game in Gargoyle's options)", self.tooltips_on,
+                 self.set_tooltips).pack(anchor="w", pady=(px(4), 0))
 
         label(page, "Game folder", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
         row = tk.Frame(page, bg=PANEL)
@@ -393,6 +402,11 @@ class App:
         linked_folder = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / addon_install.NAME)
         offer = addon_install.offer(self.versions)
         update = offer["version"] if offer and installed and addon_install.newer(offer["version"], installed) else None
+        tips = addon_install.installed_version(folder, addon_install.TOOLTIPS) if folder else None
+        tips_offer = addon_install.offer(self.versions, "tooltips")
+        tips_update = (config.get("tooltips") is True and tips and tips_offer and addon_install.newer(tips_offer["version"], tips)
+                       and not addon_install.is_linked(addon_install.addons(folder) / addon_install.TOOLTIPS))
+        with_tips = f" · Damage tooltips {tips}" if tips else ""
 
         # Account
         user = config.get("user") or "your account"
@@ -417,11 +431,12 @@ class App:
             game.show("waiting", "Addon not installed", f"Game folder: {folder.name}", ("Install the addon", self.install_addon),
                       primary=True)
         elif linked_folder:
-            game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone)")
-        elif update:
-            game.show("waiting", f"Addon {installed}", f"Version {update} is out.", ("Update", self.install_addon), primary=True)
+            game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone){with_tips}")
+        elif update or tips_update:
+            out = f"Version {update} is out." if update else f"Damage tooltips {tips_offer['version']} are out."
+            game.show("waiting", f"Addon {installed}", out, ("Update", self.install_addon), primary=True)
         else:
-            game.show("ok", f"Addon {installed}", f"Game folder: {folder.name}")
+            game.show("ok", f"Addon {installed}", f"Game folder: {folder.name}{with_tips}")
         self.folder_text.configure(text=str(folder) if folder else "Not found yet")
 
         # Last sync
@@ -751,30 +766,13 @@ class App:
             self.versions = self.syncer.versions()
             self.next_version_check = time.time() + VERSION_CHECK_SECONDS
             folder = self.syncer.game_folder
-            offer = addon_install.offer(self.versions)
             if not folder:
                 return
-            current = addon_install.installed_version(folder)
-            if not offer:
-                if install:
-                    put(("log", "The addon download isn't available right now. Try again later."))
-                return
-            if not addon_install.newer(offer["version"], current):
-                if install:
-                    put(("log", f"The Gargoyle addon is up to date ({current})."))
-                return
-            linked = addon_install.is_linked(addon_install.addons(folder) / addon_install.NAME)
-            if not install and (current is None or linked or self.config.get("auto_update", True) is False):
-                return  # (installing the first time, or updating with that switched off, waits for a click)
-            signed = self.syncer.signed_addon(offer)  # (Gargoyle's release key signed it, or nothing's installed)
-            data = self.syncer.download(offer["url"], addon_install.MAX_DOWNLOAD)
-            addon_install.check_download(data, offer)
-            version = addon_install.install(folder, data, signed)
-            text = (f"Installed the Gargoyle addon {version}." if current is None
-                    else f"Updated the Gargoyle addon to {version}.")
-            put(("log", text + " If the game is open, restart it to load it."))
-            put(("notify", text + " If the game is open, restart it to load it."))
-            self.syncer.last_refresh = 0  # sync now (the new copy needs its raid data)
+            if self._update_addon(folder, "addon", install):
+                self.syncer.last_refresh = 0  # sync now (the new copy needs its raid data)
+            # Damage tooltips: when ticked in Settings (and once Gargoyle is there).
+            if self.config.get("tooltips") is True and addon_install.installed_version(folder) is not None:
+                self._update_addon(folder, "tooltips", install)
         except requests.RequestException:
             if install:
                 put(("log", "Couldn't reach GitHub to get the addon. Try again in a moment."))
@@ -785,6 +783,54 @@ class App:
         finally:
             self.checking = False
             put(("refresh",))
+
+    def _update_addon(self, folder, key, install):
+        """Installs or updates one addon ("addon": Gargoyle, "tooltips": Damage tooltips) if
+        the release has a newer one. True if it did."""
+        put = self.events.put
+        name = addon_install.ADDONS[key]
+        title = "Gargoyle addon" if key == "addon" else "Damage tooltips addon"
+        offer = addon_install.offer(self.versions, key)
+        current = addon_install.installed_version(folder, name)
+        if not offer:
+            if install:
+                put(("log", f"The {title} download isn't available right now. Try again later."))
+            return False
+        if not addon_install.newer(offer["version"], current):
+            if install:
+                put(("log", f"The {title} is up to date ({current})."))
+            return False
+        linked = addon_install.is_linked(addon_install.addons(folder) / name)
+        auto_off = self.config.get("auto_update", True) is False
+        # Without a click: never a linked copy, Gargoyle's first install waits for one, and
+        # updates wait when they're switched off. (Ticked Damage tooltips go in straight away.)
+        if not install and (linked or (current is None and key == "addon") or (current is not None and auto_off)):
+            return False
+        signed = self.syncer.signed_addon(offer)  # (Gargoyle's release key signed it, or nothing's installed)
+        data = self.syncer.download(offer["url"], addon_install.MAX_DOWNLOAD)
+        addon_install.check_download(data, offer)
+        version = addon_install.install(folder, data, signed, name)
+        text = f"Installed the {title} {version}." if current is None else f"Updated the {title} to {version}."
+        put(("log", text + " If the game is open, restart it to load it."))
+        put(("notify", text + " If the game is open, restart it to load it."))
+        return True
+
+    def set_tooltips(self):
+        """Damage tooltips ticked (installed now) or unticked (taken out of the game)."""
+        on = self.tooltips_on.get()
+        self.config.set("tooltips", on)
+        if on:
+            self.check_versions(install=True)
+            return
+        folder = self.syncer.game_folder
+        if not folder:
+            return
+        try:
+            if addon_install.uninstall(folder, addon_install.TOOLTIPS):
+                self.log("Removed the Damage tooltips addon. If the game is open, it's gone after a restart.")
+        except addon_install.InstallError as exc:
+            self.log(f"Couldn't remove the Damage tooltips addon: {exc}.")
+        self.refresh()
 
     # ---- Syncing ----
 

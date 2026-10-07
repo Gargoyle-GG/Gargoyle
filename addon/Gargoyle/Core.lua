@@ -249,6 +249,13 @@ function ns.CreateOptions()
   ns.remindersBox = option("Remind me a day before a raid I haven't signed up for",
     function() return alerts.On("reminders") end, function(on) alerts.SetOn("reminders", on) end)
   ns.calendarBox = option("Mark my guilds' raids on the game's calendar", ns.Calendar.On, ns.Calendar.SetOn)
+  -- Damage tooltips are their own addon (Gargoyle_Tooltips), installed by the Gargoyle app
+  -- when it's ticked there; its switch lives here.
+  local tips = GargoyleTooltips
+  ns.tooltipsBox = option(tips and "Show a damage and healing breakdown on my spells' tooltips"
+      or "Damage tooltips aren't loaded (install them from the Gargoyle app's Settings, or turn them on in the AddOns list)",
+    function() return tips ~= nil and tips.On() end, function(on) if tips then tips.SetOn(on) end end)
+  if not tips then ns.tooltipsBox:Disable() end
   panel:SetScript("OnShow", function()
     for key, box in pairs(ns.optionBoxes) do box:SetChecked(ns.IsEnabled(key)) end
     for box, get in pairs(more) do box:SetChecked(get()) end
