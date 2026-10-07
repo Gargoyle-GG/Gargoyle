@@ -12,5 +12,7 @@ How releases are protected:
 - The app only installs an addon update if every file matches a manifest signed with
   Gargoyle's release key ([signing.py](helper/signing.py)). That key is kept offline, never on
   GitHub, so even someone who got into GitHub couldn't push an addon update to players.
-- The app never runs anything it downloads: a new version of the app itself is an installer
-  you choose to run.
+- The app runs only one thing it downloads: a new version's installer, when you click
+  **Update now**, and only if it's exactly the installer GitHub built for that release, as
+  signed with the same release key after the build (its size and SHA-256 in
+  `release/app-manifest.json`). Unsigned, it shows the download instead.

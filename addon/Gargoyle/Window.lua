@@ -3,7 +3,13 @@
 -- character window), so it looks like the rest of the game.
 local _, ns = ...
 
-ns.ICON = "Interface\\Icons\\Spell_Shadow_RaiseDead"
+-- Gargoyle's gold G badge, as on gargoyle.gg (Media/, drawn by tools/build_addon_icons.py for
+-- the size each is shown at): the badge itself for small marks, and round versions for round
+-- frames (the minimap button, and the window's corner portrait).
+local MEDIA = "Interface\\AddOns\\Gargoyle\\Media\\"
+ns.ICON = MEDIA .. "Badge"
+ns.ROUND_ICON = MEDIA .. "Round"
+ns.PORTRAIT = MEDIA .. "Portrait"
 
 local window, empty, account, waiting
 local tabs, panels = {}, {}
@@ -43,7 +49,7 @@ local function create()
   window:Hide()
   tinsert(UISpecialFrames, "GargoyleWindow") -- Escape closes it
   window:SetTitle("Gargoyle")
-  window:SetPortraitToAsset(ns.ICON)
+  window:SetPortraitToAsset(ns.PORTRAIT)
 
   -- Under the title: whose data this is and how fresh, and the options.
   account = window:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")

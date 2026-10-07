@@ -190,6 +190,27 @@ def test_new_raids_from_saved_data():
     assert sync_file.sync_table({}, {})["can_make_raids"] is True
 
 
+def test_talent_plans_in_the_data_file():
+    """Each character's talents (talent plans) are copied field by field, checked and cut; the
+    data file says this app sends them."""
+    good = {"tree": 2, "name": "Improved Fireball", "spells": [11069, 12338], "rank": 5}
+    talents = [good, {"tree": 1, "name": HOSTILE[0], "spells": list(range(1, 30)) + ["x", -5, True], "rank": 1},
+               {"tree": 9, "name": "Bad tree", "rank": 1}, {"tree": 1, "name": "Bad rank", "rank": 11},
+               {"tree": 1, "name": "", "rank": 1}, {"tree": True, "name": "Bool", "rank": 1}, "junk"]
+    api = {"characters": [{"id": 1, "name": "Plan", "class": "mage", "talents": talents + [good] * 70},
+                          {"id": 2, "name": "Old website", "class": "mage", "talents": "junk"}]}
+    table = sync_file.sync_table(api, {})
+    assert table["sends_talents"] is True
+    plan, old = table["characters"]
+    assert plan["talents"][0] == good and len(plan["talents"]) == sync_file.MAX_TALENTS
+    assert plan["talents"][1] == {"tree": 1, "name": HOSTILE[0][:60], "spells": list(range(1, 11)), "rank": 1}
+    assert plan["talents"][2] == good and old["talents"] == []
+    # Read back in Lua: plain data.
+    env = load_in_lua(sync_file.sync_lua(api, {}))
+    first = env.GargoyleSync.characters[1].talents[2]
+    assert first.name == HOSTILE[0][:60] and first.spells[10] == 10
+
+
 def test_new_raids_are_sent_once_then_let_go(tmp_path, game_folder):
     calls = []
 
@@ -411,6 +432,114 @@ def test_a_linked_addon_folder_is_left_alone(tmp_path):
     with pytest.raises(addon_install.InstallError):
         addon_install.install(game, addon_zip(), signed_for(addon_zip()))
     assert (source / "Gargoyle.toc").read_text() == "## Version: 0.1.0\n" and len(list(source.iterdir())) == 1
+
+
+def test_a_broken_link_or_an_update_cut_short_is_put_right(tmp_path):
+    """A link to a folder that's gone: "not installed", and in the way of installing, until
+    Install removes the link (only the link). An update cut short between moving the old copy
+    aside and putting the new one in: the old copy goes back."""
+    import os
+    import shutil
+    _winapi = pytest.importorskip("_winapi")
+    game = tmp_path / "_classic_"
+    addons = game / "Interface" / "AddOns"
+    addons.mkdir(parents=True)
+    source = tmp_path / "repo" / "Gargoyle"
+    source.mkdir(parents=True)
+    (source / "Gargoyle.toc").write_text("## Version: 0.1.0\n")
+    _winapi.CreateJunction(str(source), str(addons / "Gargoyle"))
+    assert not addon_install.is_dead_link(addons / "Gargoyle")
+    shutil.rmtree(tmp_path / "repo")
+    assert addon_install.is_dead_link(addons / "Gargoyle") and addon_install.installed_version(game) is None
+    assert addon_install.repair(game, links=False) is None and os.path.lexists(addons / "Gargoyle")  # (waits for a click)
+    data = addon_zip(version="1.0.0")
+    assert addon_install.install(game, data, signed_for(data, "1.0.0")) == "1.0.0"
+    assert not addon_install.is_linked(addons / "Gargoyle")
+    # Cut short: the old copy aside, a half-made new one, no addon.
+    os.replace(addons / "Gargoyle", addons / "Gargoyle.old")
+    (addons / "Gargoyle.new").mkdir()
+    assert addon_install.installed_version(game) is None
+    assert addon_install.repair(game, links=False) == "put back the copy an update cut short had moved aside"
+    assert addon_install.installed_version(game) == "1.0.0"
+    assert addon_install.repair(game) is None  # (nothing more to put right)
+    newer = addon_zip(version="1.1.0")
+    assert addon_install.install(game, newer, signed_for(newer, "1.1.0")) == "1.1.0"
+    assert sorted(p.name for p in addons.iterdir()) == ["Gargoyle"]
+
+
+def test_the_app_installer_is_signed_after_the_build(release_key):
+    import base64
+    import version
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    key = version.ADDON_SIGNING_KEY
+    app = offer_for(b"setup", "9.1.0", "GargoyleSetup.exe")
+    body = signing.app_manifest("v9.1.0-addon9.0.0", app)
+    assert signing.verify_app(body, release_key(body), key) == {"kind": "app", "tag": "v9.1.0-addon9.0.0", **app}
+    # An addon's manifest isn't an installer's, nor the other way round.
+    addon_body = signing.manifest("v9.1.0-addon9.0.0", "9.0.0", {"Gargoyle/Gargoyle.toc": b"x"})
+    with pytest.raises(signing.SignatureError):
+        signing.verify_app(addon_body, release_key(addon_body), key)
+    with pytest.raises(signing.SignatureError):
+        signing.verify(body, release_key(body), key)
+    # Changed after signing, or signed by another key: no.
+    other = base64.b64encode(Ed25519PrivateKey.generate().sign(body))
+    for bad, signature in ((body.replace(b'"9.1.0"', b'"9.2.0"'), release_key(body)), (body, other), (body, b"")):
+        with pytest.raises(signing.SignatureError):
+            signing.verify_app(bad, signature, key)
+
+
+def test_update_now_runs_only_the_signed_installer(tmp_path, release_key):
+    pytest.importorskip("tkinter")
+    import json
+    import queue
+    import types
+    import gargoyle_app
+    import self_update
+    setup = b"MZ the new installer"
+    versions = release(app=setup, app_version="99.0.0")
+    app = addon_install.app_installer(versions)
+    assert self_update.installer(versions, "1.0.0") == app and self_update.installer(versions, "99.0.0") is None
+    body = signing.app_manifest(versions["tag"], versions["app"])
+    files = {"versions.json": json.dumps(versions).encode(), "GargoyleSetup.exe": setup,
+             "app-manifest.json": body, "app-manifest.sig": release_key(body)}
+    config = Config(tmp_path / "config.json")
+    launched = []
+
+    def window(changed=None):
+        w = types.SimpleNamespace(events=queue.Queue(), config=config, versions=versions, app_offer=None,
+                                  update_busy=True, updating=None)
+        w.syncer = Syncer(config, http=FakeGitHub({**files, **(changed or {})}), log=lambda text: None)
+        gargoyle_app.App._check_app(w)
+        return w
+
+    def update(w):
+        gargoyle_app.App._update_app(w, app, temp=tmp_path, launch=lambda args, **kw: launched.append(args))
+
+    # Signed: Update now downloads it, checks it and starts it quietly. Earlier ones are cleared.
+    (tmp_path / "GargoyleUpdate").mkdir()
+    (tmp_path / "GargoyleUpdate" / "GargoyleSetup-1.0.0.exe").write_bytes(b"old")
+    w = window()
+    assert w.app_offer == app
+    update(w)
+    (args,) = launched
+    assert args[1:] == ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/fromapp=1"]
+    assert args[0] == str(tmp_path / "GargoyleUpdate" / "GargoyleSetup-99.0.0.exe")
+    assert Path(args[0]).read_bytes() == setup and not (tmp_path / "GargoyleUpdate" / "GargoyleSetup-1.0.0.exe").exists()
+    assert "Installing Gargoyle 99.0.0" in w.updating and w.update_busy
+    # Not signed (yet), signed by another key, or signed for another installer: the download
+    # button instead.
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    import base64
+    another = signing.app_manifest(versions["tag"], {**versions["app"], "sha256": "0" * 64})
+    for changed in ({"app-manifest.json": None}, {"app-manifest.sig": b"junk"},
+                    {"app-manifest.sig": base64.b64encode(Ed25519PrivateKey.generate().sign(body))},
+                    {"app-manifest.json": another, "app-manifest.sig": release_key(another)}):
+        assert window(changed).app_offer is None  # (None: not there)
+    # Swapped on GitHub after it was signed: downloaded, refused, never run.
+    w = window({"GargoyleSetup.exe": b"MZ something else"})
+    assert w.app_offer == app
+    update(w)
+    assert len(launched) == 1 and not w.update_busy and w.app_offer is None and "didn't work" in w.updating
 
 
 def test_versions():
@@ -738,6 +867,15 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         app.refresh()
         shown = texts(root)
         assert "Update" in shown and app.banner.winfo_manager() == "pack" and any("A new version of the Gargoyle app is out (99.0)" in t for t in shown)
+        # Its installer not signed (yet), or run from the source code: the download. Signed, in
+        # the installed app: Update now.
+        assert app.download_button.winfo_manager() == "pack" and app.update_button.winfo_manager() == ""
+        app.app_offer = addon_install.app_installer(app.versions)
+        app.refresh()
+        assert app.download_button.winfo_manager() == "pack"
+        monkeypatch.setattr(gargoyle_app, "installed_app", lambda: True)
+        app.refresh()
+        assert app.update_button.winfo_manager() == "pack" and app.download_button.winfo_manager() == ""
     finally:
         root.destroy()
 
@@ -874,8 +1012,10 @@ def test_the_app_installs_ticked_damage_tooltips(tmp_path, game_folder, release_
 
     config = Config(tmp_path / "config.json")
     config.data.update(game_folder=str(game_folder))
-    app = types.SimpleNamespace(events=queue.Queue(), config=config, checking=True, next_version_check=0, versions={})
+    app = types.SimpleNamespace(events=queue.Queue(), config=config, checking=True, next_version_check=0, versions={},
+                                app_offer=None)
     app._update_addon = lambda *args: gargoyle_app.App._update_addon(app, *args)
+    app._check_app = lambda: gargoyle_app.App._check_app(app)
 
     def check(tips_version, install=False):
         app.syncer = Syncer(config, http=github(tips_version), log=lambda text: None)

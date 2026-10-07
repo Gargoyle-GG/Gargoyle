@@ -6,6 +6,10 @@
 ; shortcut and starting with Windows, and an uninstaller in Windows' Apps list. Running a
 ; newer GargoyleSetup.exe updates it in place, closing the running app first.
 ; The app's own settings (%APPDATA%\Gargoyle) are left alone by updates and uninstalling.
+;
+; The app's "Update now" (helper/self_update.py) runs this quietly with /fromapp=1: then the
+; choices made since in the app (Damage tooltips, starting with Windows) and the desktop
+; shortcut are left as they are, and the app's window opens again afterwards.
 
 #ifndef AppVersion
   #error Pass /DAppVersion=x.y.z
@@ -57,25 +61,39 @@ Source: "{#Source}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs cre
 [INI]
 ; The "Also install Damage tooltips" tick, for the app to read once (addon_install.installer_choice):
 ; the app installs that addon itself, from Gargoyle's signed release, like the Gargoyle addon.
-Filename: "{app}\choices.ini"; Section: "addons"; Key: "tooltips"; String: "1"; Tasks: tooltips; Flags: uninsdeletesection
-Filename: "{app}\choices.ini"; Section: "addons"; Key: "tooltips"; String: "0"; Tasks: not tooltips; Flags: uninsdeletesection
+Filename: "{app}\choices.ini"; Section: "addons"; Key: "tooltips"; String: "1"; Tasks: tooltips; Check: not FromApp; Flags: uninsdeletesection
+Filename: "{app}\choices.ini"; Section: "addons"; Key: "tooltips"; String: "0"; Tasks: not tooltips; Check: not FromApp; Flags: uninsdeletesection
 
 [Icons]
 Name: "{autoprograms}\Gargoyle"; Filename: "{app}\GargoyleApp.exe"
-Name: "{autodesktop}\Gargoyle"; Filename: "{app}\GargoyleApp.exe"; Tasks: desktopicon
+Name: "{autodesktop}\Gargoyle"; Filename: "{app}\GargoyleApp.exe"; Tasks: desktopicon; Check: not FromApp
 
 [Registry]
 ; The same per-user entry the app's own "Start with Windows" switch uses (helper/startup.py).
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Gargoyle"; ValueData: """{app}\GargoyleApp.exe"" --tray"; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Gargoyle"; ValueData: """{app}\GargoyleApp.exe"" --tray"; Tasks: startup; Check: not FromApp
 ; Removed when Gargoyle is uninstalled, however it was turned on.
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Gargoyle"; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\GargoyleApp.exe"; Description: "Open Gargoyle"; Flags: nowait postinstall skipifsilent
-; (After a quiet update, Gargoyle comes back by itself.)
-Filename: "{app}\GargoyleApp.exe"; Parameters: "--tray"; Flags: nowait; Check: WizardSilent
+; (After a quiet update, Gargoyle comes back by itself: in the tray, or its window after Update now.)
+Filename: "{app}\GargoyleApp.exe"; Parameters: "{code:RestartParameters}"; Flags: nowait; Check: WizardSilent
 
 [Code]
+// Run by the app's own "Update now" (/fromapp=1)?
+function FromApp(): Boolean;
+begin
+  Result := ExpandConstant('{param:fromapp|0}') = '1';
+end;
+
+function RestartParameters(Param: String): String;
+begin
+  if FromApp() then
+    Result := ''
+  else
+    Result := '--tray';
+end;
+
 // Before installing over it or uninstalling it: a running Gargoyle (maybe waiting in the
 // tray) is asked to quit, by leaving a "quit" file in its settings folder that it looks for
 // every second. Only if it hasn't gone after a few seconds is it closed by force.

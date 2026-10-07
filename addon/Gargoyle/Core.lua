@@ -91,6 +91,8 @@ local function loadDB()
   db.outbox = tableOr(db.outbox)
   db.newRaids = tableOr(db.newRaids) -- raids made in game by officers, waiting to sync
   db.characters = tableOr(db.characters)
+  -- Talent plans (Modules/Talents.lua): "<character key>#<talent set>" -> the website character followed.
+  db.talentPlans = tableOr(db.talentPlans)
   -- (db.calendar: false when Gargoyle's raids are kept off the game's calendar)
   db.minimap = tableOr(db.minimap) -- the minimap button: angle (degrees), hide
   -- Raid alerts (Modules/RaidAlerts.lua): newRaids, reminders (false = off), and the raids
@@ -120,6 +122,55 @@ function ns.PlayerKey()
   if guid then return guid end
   local name = ns.PlayerName()
   return name and ("name:" .. name)
+end
+
+function ns.SpellName(spellID)
+  if not spellID or spellID == 0 then return end
+  if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(spellID) end
+  if GetSpellInfo then return (GetSpellInfo(spellID)) end
+end
+
+-- ---- Talents ----
+
+-- The talents in the game's talent tree, as Blizzard's talent window reads them. WoW Forever
+-- has one talent tree per class (C_Traits), with the classic three trees as groups in it.
+-- Each talent: its node id, tree number (the group's place), name, spell, points spent
+-- (counting ones not applied yet), most points, and whether a point can go in now. Also the
+-- points left to spend. Nil if the game doesn't show the tree.
+function ns.TalentNodes(configID)
+  local traits = C_Traits
+  local config = configID and traits and traits.GetConfigInfo(configID)
+  local treeID = config and config.treeIDs and config.treeIDs[1]
+  if not treeID then return end
+  local groups = traits.GetGroupDisplayInfoByTreeID and traits.GetGroupDisplayInfoByTreeID(treeID) or {}
+  table.sort(groups, function(a, b) return (a.orderIndex or 0) < (b.orderIndex or 0) end)
+  local tabs = {} -- group id -> tree number
+  for i, group in ipairs(groups) do tabs[group.groupID] = i end
+  local points
+  if traits.GetTreeCurrencyInfo then
+    points = 0
+    for _, currency in ipairs(traits.GetTreeCurrencyInfo(configID, treeID, false) or {}) do
+      points = points + (currency.quantity or 0)
+    end
+  end
+  local nodes = {}
+  for _, nodeID in ipairs(traits.GetTreeNodes(treeID) or {}) do
+    local node = traits.GetNodeInfo(configID, nodeID)
+    if node then
+      local entryID = (node.activeEntry and node.activeEntry.entryID) or (node.entryIDs and node.entryIDs[1])
+      local entry = entryID and traits.GetEntryInfo(configID, entryID)
+      local definition = entry and entry.definitionID and traits.GetDefinitionInfo(entry.definitionID)
+      local spell = definition and definition.spellID
+      local tab
+      for _, groupID in ipairs(node.groupIDs or {}) do tab = tab or tabs[groupID] end
+      nodes[#nodes + 1] = {
+        id = nodeID, tab = tab, spell = spell, rank = node.ranksPurchased or node.activeRank or 0, max = node.maxRanks,
+        name = definition and ((definition.overrideName ~= "" and definition.overrideName) or ns.SpellName(spell)),
+        canTake = node.canPurchaseRank == true and (points == nil or points > 0),
+      }
+    end
+  end
+  return nodes, points
 end
 
 -- ---- Data from the Gargoyle app ----
@@ -160,6 +211,22 @@ local function readRaid(raw, guild)
   return raid
 end
 
+-- A character's talents, as a talent plan: tree number, name, spells and points.
+local function readPlan(raw)
+  local plan = {}
+  for _, t in ipairs(list(raw)) do
+    if type(t) == "table" and number(t.tree) and text(t.name, 60) and number(t.rank) and t.rank >= 1 and t.rank <= 10 then
+      local spells = {}
+      for _, spell in ipairs(list(t.spells)) do
+        if number(spell) and #spells < 10 then spells[#spells + 1] = spell end
+      end
+      plan[#plan + 1] = { tree = t.tree, name = text(t.name, 60), rank = t.rank, spells = spells }
+    end
+    if #plan == 60 then break end
+  end
+  return plan
+end
+
 function ns.ReadSync()
   local sync = { characters = {}, guilds = {}, done = {}, removed = {}, imports = {} }
   local raw = GargoyleSync
@@ -167,11 +234,12 @@ function ns.ReadSync()
   sync.loaded = true
   sync.synced, sync.user = number(raw.synced), text(raw.user, 60)
   sync.makesRaids = raw.can_make_raids == true -- (the app sends raids made in game; older ones don't)
+  sync.sendsTalents = raw.sends_talents == true -- (and characters' talents, for talent plans)
   for _, c in ipairs(list(raw.characters)) do
     if type(c) == "table" and number(c.id) and text(c.name, 60) then
       sync.characters[#sync.characters + 1] = {
         id = c.id, name = text(c.name, 60), class = text(c.class, 20) or "", guild = number(c.guild),
-        role = text(c.role, 10), game = text(c.game, 80), read = number(c.read),
+        role = text(c.role, 10), game = text(c.game, 80), read = number(c.read), talents = readPlan(c.talents),
       }
     end
   end

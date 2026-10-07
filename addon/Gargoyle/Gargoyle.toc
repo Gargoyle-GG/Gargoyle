@@ -1,11 +1,11 @@
 ## Interface: 16001
 ## Title: Gargoyle
-## Notes: Your guild's raids and signups in game (on the game's calendar too, with a heads-up about new raids and a reminder before raids you haven't signed up for), new raids for officers, and your characters kept up to date on your Gargoyle account. Open it with the minimap button or /gargoyle. Each feature can be turned on or off in Options > AddOns > Gargoyle.
+## Notes: Your guild's raids and signups in game (on the game's calendar too, with a heads-up about new raids and a reminder before raids you haven't signed up for), new raids for officers, your characters kept up to date on your Gargoyle account, and talent plans: the game's talent window marks the talents a build from your account still wants. Open it with the minimap button or /gargoyle. Each feature can be turned on or off in Options > AddOns > Gargoyle.
 ## Author: Gargoyle
-## Version: 0.6.0
+## Version: 0.7.0
 ## SavedVariables: GargoyleDB
 ## OptionalDeps: Gargoyle_Sync
-## IconTexture: Interface\Icons\Spell_Shadow_RaiseDead
+## IconTexture: Interface\AddOns\Gargoyle\Media\Badge
 ## AddonCompartmentFunc: Gargoyle_OnAddonCompartmentClick
 
 Core.lua
@@ -15,4 +15,5 @@ Modules\Raids.lua
 Modules\RaidAlerts.lua
 Modules\Calendar.lua
 Modules\Characters.lua
+Modules\Talents.lua
 Debug.lua

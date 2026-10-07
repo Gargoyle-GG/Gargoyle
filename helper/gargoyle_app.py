@@ -22,6 +22,7 @@ import requests
 
 import addon_install
 import overview
+import self_update
 import signing
 import startup
 import wow_paths
@@ -33,6 +34,7 @@ TICK_MS = 5000
 PUMP_MS = 250
 VERSION_CHECK_SECONDS = 6 * 3600  # how often it asks whether the addon or app has a new version
 VERSION_RETRY_SECONDS = 600  # (sooner after a check that didn't get through, e.g. starting with Windows before the internet is up)
+UPDATE_WAIT_SECONDS = 180  # how long "Update now" waits for the installer to close the app
 SHOW_FILE = "show"  # left in the settings folder by a second copy of the app: "show the window"
 QUIT_FILE = "quit"  # left there by the installer before it updates or removes the app
 
@@ -58,6 +60,12 @@ SCALE = 1.0  # the screen's scaling (set in main); px() sizes things to match
 
 def px(n):
     return round(n * SCALE)
+
+
+def installed_app():
+    """Is this the installed app (GargoyleApp.exe), which can update itself? (Run from the
+    source code, it only says a new one is out.)"""
+    return bool(getattr(sys, "frozen", False))
 
 
 def asset(name):
@@ -201,6 +209,11 @@ class App:
         self.events = queue.Queue()  # from the worker threads (and the tray) to the window
         self.busy = self.linking = self.checking = False
         self.problem = None  # why the last sync didn't work, if it didn't
+        self.install_problem = None  # why the last Install / Update click didn't work, if it didn't
+        self.install_wanted = False  # (Install clicked while a version check was already running)
+        self.app_offer = None  # a newer app's installer, signed: "Update now"
+        self.updating = None  # what "Update now" is doing ("Downloading…"), or why it stopped
+        self.update_busy = False
         self.versions = {}
         self.next_version_check = 0
         self.pumps = 0
@@ -222,6 +235,8 @@ class App:
             self.log(f"The website address {self.config.site} isn't https, so the app won't connect to it.")
         if not self.config.get("game_folder"):
             self.find_folder()
+        self.repair_addons()
+        self_update.clear()  # (the installer of the update just done, if there was one)
         self.syncer.load_last()
         startup.refresh()
         self.start_tray()
@@ -266,11 +281,13 @@ class App:
         label(titles, "Keeps your raids, signups and characters in sync between the game and your Gargoyle account.",
               font=SMALL, fg=DIM, bg=BG).pack(anchor="w")
 
-        # A new app is out (shown when there is one).
+        # A new app is out (shown when there is one): Update now, or (until its installer is
+        # signed, or run from the source code) its download.
         self.banner = tk.Frame(outer, bg=PANEL, highlightthickness=1, highlightbackground=GOLD, padx=px(12), pady=px(8))
         self.banner_text = label(self.banner, font=FONT)
         self.banner_text.pack(side="left")
-        button(self.banner, "Download it", self.get_app, primary=True).pack(side="right")
+        self.update_button = button(self.banner, "Update now", self.update_app, primary=True)
+        self.download_button = button(self.banner, "Download it", self.get_app, primary=True)
 
         self.cards_row = tk.Frame(outer, bg=BG)
         self.cards_row.pack(fill="x", pady=(px(14), px(12)))
@@ -400,6 +417,7 @@ class App:
         folder = syncer.game_folder
         installed = addon_install.installed_version(folder) if folder else None
         linked_folder = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / addon_install.NAME)
+        dead_link = bool(folder) and addon_install.is_dead_link(addon_install.addons(folder) / addon_install.NAME)
         offer = addon_install.offer(self.versions)
         update = offer["version"] if offer and installed and addon_install.newer(offer["version"], installed) else None
         tips = addon_install.installed_version(folder, addon_install.TOOLTIPS) if folder else None
@@ -427,14 +445,19 @@ class App:
         game = self.cards["game"]
         if not folder:
             game.show("problem", "Game not found", "Choose the World of Warcraft folder.", ("Choose…", self.choose_folder))
+        elif dead_link:
+            game.show("problem", "Addon folder is a broken link",
+                      self.install_problem or "It points to a folder that's gone. Install puts a fresh copy there.",
+                      ("Install the addon", self.install_addon), primary=True)
         elif installed is None:
-            game.show("waiting", "Addon not installed", f"Game folder: {folder.name}", ("Install the addon", self.install_addon),
-                      primary=True)
+            game.show("waiting", "Addon not installed", self.install_problem or f"Game folder: {folder.name}",
+                      ("Install the addon", self.install_addon), primary=True)
         elif linked_folder:
             game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone){with_tips}")
         elif update or tips_update:
             out = f"Version {update} is out." if update else f"Damage tooltips {tips_offer['version']} are out."
-            game.show("waiting", f"Addon {installed}", out, ("Update", self.install_addon), primary=True)
+            game.show("waiting", f"Addon {installed}", self.install_problem or out, ("Update", self.install_addon),
+                      primary=True)
         else:
             game.show("ok", f"Addon {installed}", f"Game folder: {folder.name}{with_tips}")
         self.folder_text.configure(text=str(folder) if folder else "Not found yet")
@@ -474,7 +497,13 @@ class App:
         # A new app?
         app_update = addon_install.app_update(self.versions, APP_VERSION)
         if app_update:
-            self.banner_text.configure(text=f"A new version of the Gargoyle app is out ({app_update}). You have {APP_VERSION}.")
+            self.banner_text.configure(text=self.updating or
+                                       f"A new version of the Gargoyle app is out ({app_update}). You have {APP_VERSION}.")
+            self_updating = installed_app() and self.app_offer is not None and self.app_offer["version"] == app_update
+            self.update_button.pack_forget()
+            self.download_button.pack_forget()
+            (self.update_button if self_updating else self.download_button).pack(side="right")
+            self.update_button.configure(state="disabled" if self.update_busy else "normal")
             self.banner.pack(fill="x", pady=(px(12), 0), after=self.header)
         else:
             self.banner.pack_forget()
@@ -666,6 +695,47 @@ class App:
         if url.startswith(RELEASES + "/"):
             webbrowser.open(url)
 
+    def update_app(self):
+        """Update now: the new installer, checked against its signature, run quietly. It
+        closes this app and opens the new one."""
+        if self.update_busy or not self.app_offer:
+            return
+        self.update_busy, self.updating = True, f"Downloading Gargoyle {self.app_offer['version']}…"
+        self.update_started = time.time()
+        threading.Thread(target=self._update_app, args=(self.app_offer,), daemon=True).start()
+        self.refresh()
+
+    def _update_app(self, app, temp=None, launch=None):
+        put = self.events.put
+        try:
+            self.syncer.signed_app(app)  # (checked again: still the signed one)
+            data = self.syncer.download(app["url"], self_update.MAX_INSTALLER)
+            path = self_update.save(data, app, temp)
+            self.updating = f"Installing Gargoyle {app['version']}… It closes and opens again by itself."
+            put(("log", f"Installing Gargoyle {app['version']}. The app closes and opens again by itself."))
+            self.update_started = time.time()
+            self_update.run(path, launch)
+        except requests.RequestException:
+            self.updating, self.update_busy = "Couldn't reach GitHub for the update. Try again in a moment.", False
+        except (addon_install.InstallError, signing.SignatureError, OSError, ValueError) as exc:
+            self.updating, self.update_busy = f"The update didn't work: {exc}. The download button gets it instead.", False
+            self.app_offer = None
+            put(("log", f"The app update didn't work: {exc}."))
+        finally:
+            put(("refresh",))
+
+    def repair_addons(self):
+        """An update cut short (the addon's old copy moved aside, the new one not in): put back."""
+        folder = self.syncer.game_folder
+        for name in addon_install.ADDONS.values():
+            try:
+                done = folder and addon_install.repair(folder, name, links=False)
+            except OSError as exc:
+                done = None
+                self.log(f"The {name} addon folder needs putting right, but that didn't work ({exc.__class__.__name__}).")
+            if done:
+                self.log(f"Put the {name} addon folder right: {done}.")
+
     # ---- Linking ----
 
     def toggle_link(self):
@@ -755,6 +825,8 @@ class App:
 
     def check_versions(self, install=False):
         if self.checking:
+            if install:  # (a check is under way: the install follows it)
+                self.install_wanted = True
             return
         self.checking = True
         threading.Thread(target=self._check_versions, args=(install,), daemon=True).start()
@@ -765,6 +837,7 @@ class App:
         try:
             self.versions = self.syncer.versions()
             self.next_version_check = time.time() + VERSION_CHECK_SECONDS
+            self._check_app()
             folder = self.syncer.game_folder
             if not folder:
                 return
@@ -773,16 +846,36 @@ class App:
             # Damage tooltips: when ticked in Settings (and once Gargoyle is there).
             if self.config.get("tooltips") is True and addon_install.installed_version(folder) is not None:
                 self._update_addon(folder, "tooltips", install)
+            if install:
+                self.install_problem = None
         except requests.RequestException:
             if install:
+                self.install_problem = "Couldn't reach GitHub. Try again in a moment."
                 put(("log", "Couldn't reach GitHub to get the addon. Try again in a moment."))
         except (addon_install.InstallError, signing.SignatureError, OSError, ValueError) as exc:  # (ValueError: an answer that made no sense)
+            if install:
+                self.install_problem = f"Couldn't install it: {exc}."
             put(("log", f"Couldn't install the addon: {exc}."))
         except Exception as exc:  # (anything else: said, rather than the checks quietly stopping)
             put(("log", f"Checking for updates didn't work ({exc.__class__.__name__})."))
         finally:
             self.checking = False
             put(("refresh",))
+            if getattr(self, "install_wanted", False):
+                self.install_wanted = False
+                self.check_versions(install=True)
+
+    def _check_app(self):
+        """A newer app: Update now, if its installer is signed (else the download button)."""
+        app = self_update.installer(self.versions, APP_VERSION)
+        if not app or (self.app_offer and self.app_offer["sha256"] == app["sha256"]):
+            self.app_offer = self.app_offer if app else None
+            return
+        try:
+            self.syncer.signed_app(app)
+            self.app_offer = app
+        except (signing.SignatureError, addon_install.InstallError, requests.RequestException, ValueError):
+            self.app_offer = None  # (not signed yet: the download button until it is)
 
     def _update_addon(self, folder, key, install):
         """Installs or updates one addon ("addon": Gargoyle, "tooltips": Damage tooltips) if
@@ -841,6 +934,12 @@ class App:
             self.sync()
         if time.time() >= self.next_version_check:
             self.check_versions()
+        if self.update_busy and time.time() - getattr(self, "update_started", time.time()) > UPDATE_WAIT_SECONDS:
+            # (the installer should have closed this app by now)
+            self.update_busy = False
+            self.updating = "The update didn't finish. Try again, or get it with the download button."
+            self.app_offer = None
+            self.refresh()
         if time.time() - self.refreshed >= 30:
             self.refresh()  # ("5 minutes ago" moves on)
 

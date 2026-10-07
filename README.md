@@ -6,7 +6,9 @@ site for WoW Forever. Free, like everything on Gargoyle.
 - **The addon** (`addon/Gargoyle`) shows your guild's upcoming raids in game (and marks them on
   the game's calendar), who's signed up, and lets you sign up (Coming / Tentative / Can't come)
   without leaving WoW. Guild officers can make new raids in game. It can also keep the
-  characters you pick up to date on your Gargoyle account.
+  characters you pick up to date on your Gargoyle account, and follow a talent build from
+  your account: the game's talent window marks the talents it still wants (talent plans).
+  You still pick every talent yourself.
 - **Damage tooltips** (`addon/Gargoyle_Tooltips`), a separate addon you can choose to install,
   add a breakdown of your spells' damage and healing to their tooltips: base numbers, your
   spell power's share, your talents, crit, and the average per cast, per second and per mana.
@@ -32,6 +34,9 @@ what you can read here.
   every file matches a manifest signed with Gargoyle's release key, which is kept offline and
   never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking Damage tooltips removes that
   addon's folder again.
+- When a new version of the app is out, **Update now** downloads its installer and runs it
+  quietly, but only if it's the installer signed with that same release key. The installer
+  closes the app, updates it and opens it again, keeping your settings.
 - It never touches the running game, its memory, or any other game files, and it never plays
   for you. The addon only shows things and records your own clicks.
 - It talks to `gargoyle.gg` (your raids and signups) and to GitHub (updates), nothing else.

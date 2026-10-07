@@ -6,10 +6,11 @@ and app's versions, file names, sizes and SHA-256. An addon download is checked 
 those before anything is unpacked, every file in it has to sit inside that addon's folder,
 and the old copy is only swapped out once the new one is fully unpacked next to it.
 Nothing but Interface\\AddOns\\Gargoyle and (when it's ticked in the app's Settings)
-Interface\\AddOns\\Gargoyle_Tooltips is touched. The app itself isn't replaced: it says a new
-version is out, and its download is the installer.
+Interface\\AddOns\\Gargoyle_Tooltips is touched. A new app is installed by its own installer
+(self_update.py).
 
 An addon folder that's a link (a developer's copy linked from elsewhere) is never updated.
+A link to a folder that's gone, or an update cut short, is put right first (repair).
 """
 
 import hashlib
@@ -31,8 +32,10 @@ MAX_DOWNLOAD = 10 * 1024 * 1024
 MAX_UNPACKED = 20 * 1024 * 1024
 MAX_FILES = 500
 MAX_VERSIONS = 64 * 1024  # (versions.json)
-# Releases' files come from GitHub only (github.com sends downloads on to its file servers).
-RELEASE_HOSTS = {"github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"}
+# Releases' files come from GitHub only (github.com sends downloads on to its file servers;
+# the app installer's signed manifest is read from the public repo's own files).
+RELEASE_HOSTS = {"github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com",
+                 "raw.githubusercontent.com"}
 TAG = re.compile(r"^[A-Za-z0-9._+-]{1,60}$")
 FILE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 # Names a file in the addon may have: plain letters and digits, not ending in a dot or space
@@ -71,6 +74,32 @@ def is_linked(folder):
     return bool(getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
 
 
+def is_dead_link(folder):
+    """A link to a folder that's gone (moved or deleted): neither the game nor the app can
+    read it, and it's in the way of installing."""
+    return is_linked(folder) and not os.path.exists(folder)
+
+
+def repair(game_folder, name=NAME, links=True):
+    """Puts right what stops an addon from showing or installing, and says what it did (or
+    None): a link to a folder that's gone (with `links`: only the link goes, nothing it ever
+    pointed to), and an update cut short between moving the old copy aside and putting the
+    new one in (the old copy goes back)."""
+    target = addons(game_folder) / name
+    old = target.with_name(name + ".old")
+    done = []
+    if links and is_dead_link(target):
+        try:
+            os.rmdir(target)  # (a junction or folder link: removes the link itself)
+        except OSError:
+            os.unlink(target)
+        done.append("removed a link to a folder that's gone")
+    if not os.path.lexists(target) and old.is_dir() and not is_linked(old) and (old / f"{name}.toc").is_file():
+        os.replace(old, target)
+        done.append("put back the copy an update cut short had moved aside")
+    return " and ".join(done) or None
+
+
 def parse_version(text):
     """"1.2.10" -> (1, 2, 10); anything odd -> None."""
     if not isinstance(text, str) or not re.match(r"^\d+(\.\d+){0,3}$", text):
@@ -106,9 +135,15 @@ def offer(versions, key="addon"):
     return {**addon, "key": key, "name": ADDONS[key]} if addon and addon["size"] <= MAX_DOWNLOAD else None
 
 
+def app_installer(versions):
+    """The app's installer in the latest release ({version, file, size, sha256, tag, url}),
+    checked, or None."""
+    return _file(versions, "app", (".exe",))
+
+
 def app_update(versions, current):
     """The newer app version in the latest release, or None."""
-    app = _file(versions, "app", (".exe",))
+    app = app_installer(versions)
     return app["version"] if app and newer(app["version"], current) else None
 
 
@@ -160,6 +195,11 @@ def install(game_folder, data, signed, name=NAME):
     if name not in ADDONS.values():
         raise InstallError(f"{name[:40]} isn't a Gargoyle addon")
     target = addons(game_folder) / name
+    try:
+        repair(game_folder, name)
+    except OSError as exc:
+        raise InstallError(f"the {name} folder couldn't be put right ({exc.__class__.__name__}); "
+                           f"deleting Interface\\AddOns\\{name} by hand lets it install again") from None
     if is_linked(target):
         raise InstallError(f"the {name} addon folder is a link to a copy elsewhere, so it's left alone")
     try:
@@ -168,8 +208,13 @@ def install(game_folder, data, signed, name=NAME):
         raise InstallError("the download isn't a zip file") from None
     new, old = target.with_name(name + ".new"), target.with_name(name + ".old")
     for leftover in (new, old):  # (from an update that was cut short)
-        if leftover.exists() and not is_linked(leftover):
+        if os.path.lexists(leftover):
+            if is_linked(leftover):
+                raise InstallError(f"{leftover.name} in Interface\\AddOns is a link; move it away to update")
             shutil.rmtree(leftover, ignore_errors=True)
+            if leftover.exists():
+                raise InstallError(f"{leftover.name}, left in Interface\\AddOns by an earlier update, couldn't be "
+                                   "removed (a file in it is in use); close the game, or delete it by hand")
     with archive:
         members = _members(archive, name)
         new.mkdir(parents=True)
@@ -204,8 +249,11 @@ def install(game_folder, data, signed, name=NAME):
             os.replace(target, old)
         os.replace(new, target)
     except OSError as exc:
-        if old.exists() and not target.exists():
-            os.replace(old, target)
+        try:
+            if old.exists() and not os.path.lexists(target):
+                os.replace(old, target)
+        except OSError:
+            pass  # (repair() puts it back next time)
         shutil.rmtree(new, ignore_errors=True)
         raise InstallError(f"a file is in use, so it couldn't be replaced ({exc.__class__.__name__}); "
                            "trying again later") from None

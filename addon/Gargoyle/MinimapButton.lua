@@ -79,7 +79,7 @@ function ns.CreateMinimapButton()
   local icon = button:CreateTexture(nil, "ARTWORK")
   icon:SetSize(17, 17)
   icon:SetPoint("TOPLEFT", 7, -6)
-  icon:SetTexture(ns.ICON)
+  icon:SetTexture(ns.ROUND_ICON)
   icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
   if button.CreateMaskTexture and icon.AddMaskTexture then
     local mask = button:CreateMaskTexture()

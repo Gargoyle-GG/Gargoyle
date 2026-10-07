@@ -15,7 +15,7 @@ local function keep(value)
     for k, v in pairs(value) do
       if type(k) == "string" or type(k) == "number" then
         local vk = type(v)
-        copy[k] = (vk == "number" or vk == "string" or vk == "boolean") and v or ("<" .. vk .. ">")
+        if vk == "number" or vk == "string" or vk == "boolean" then copy[k] = v else copy[k] = "<" .. vk .. ">" end
       end
     end
     return copy
@@ -131,6 +131,30 @@ function ns.Debug()
     report.read = ok and { talents = character.talents and #character.talents or "<nil>",
                            gear = character.gear and #character.gear or "<nil>",
                            skills = character.skills and #character.skills or "<nil>" } or tostring(character)
+  end
+
+  -- Talent plans (Modules/Talents.lua): the points to spend, the first node as the talent
+  -- window shows it, and what the plan finds.
+  local window = PlayerSpellsFrame and PlayerSpellsFrame.TalentsFrame
+  local currency = try(traits.GetTreeCurrencyInfo, configID, treeID, false)
+  if currency.count then
+    local ok, list = pcall(traits.GetTreeCurrencyInfo, configID, treeID, false)
+    currency = {}
+    for _, c in ipairs(ok and type(list) == "table" and list or {}) do currency[#currency + 1] = keep(c) end
+  end
+  report.plans = {
+    currency = currency,
+    firstNode = nodes[1] and keep(traits.GetNodeInfo(configID, nodes[1])) or "<none>",
+    window = window and { shown = window:IsShown(), config = try(window.GetConfigID, window),
+                          enumerate = type(window.EnumerateAllTalentButtons), buttonsParent = window.ButtonsParent ~= nil,
+                          background = window.Background ~= nil } or "<not loaded>",
+    eventRegistry = type(EventRegistry),
+    specGroup = try(spec.GetActiveSpecGroup),
+  }
+  if ns.Talents then
+    local ok, result = pcall(ns.Talents.Progress)
+    report.plans.progress = ok and (result and { planned = result.planned, spent = result.spent, now = result.now,
+      todo = #result.todo, over = #result.over, missing = #result.missing } or "<no plan>") or tostring(result)
   end
 
   report.skills = {

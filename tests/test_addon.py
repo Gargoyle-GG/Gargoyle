@@ -29,6 +29,7 @@ local NOOP = { "SetSize", "SetWidth", "SetHeight", "ClearAllPoints", "SetAllPoin
   "SetSmoothing", "Raise" }
 for _, name in ipairs(NOOP) do methods[name] = function() end end
 function methods:SetPoint(...) self.point = { ... } end
+function methods:SetAllPoints(target) self.over = target end
 function methods:GetWidth() return 140 end
 function methods:GetHeight() return 140 end
 function methods:GetCenter() return 500, 400 end
@@ -254,11 +255,13 @@ C_Traits = {
     end
     return ids
   end,
-  GetNodeInfo = function(_, id)
+  GetNodeInfo = function(_, id) -- (a talent with a 7th value true can't take a point yet)
     local t = talent(id)
     return { ID = id, ranksPurchased = t[4], activeRank = t[4], maxRanks = t[5], entryIDs = { id },
-             activeEntry = { entryID = id, rank = t[4] }, groupIDs = { 600 + math.floor(id / 1000) } }
+             activeEntry = { entryID = id, rank = t[4] }, groupIDs = { 600 + math.floor(id / 1000) },
+             canPurchaseRank = t[4] < t[5] and not t[7] }
   end,
+  GetTreeCurrencyInfo = function() return { { traitCurrencyID = 1, quantity = fake.char.unspent, spent = 0 } } end,
   GetEntryInfo = function(_, id) return { definitionID = id } end,
   GetDefinitionInfo = function(id) return { spellID = talent(id)[6], overrideName = "" } end,
 }
@@ -281,6 +284,47 @@ function fake.olderTalents()
     local t = fake.char.talents[tab][index]
     return t[1], "icon", t[2], t[3], t[4], t[5]
   end
+end
+-- The game's talent window (Blizzard_PlayerSpells, loaded when it's first opened):
+-- fake.openTalents() loads it and shows it, with a button for each talent, as the game draws
+-- it; fake.redrawTalents() is the game redrawing it after a change. Nothing that changes
+-- talents may ever be called.
+EventRegistry = { callbacks = {} }
+function EventRegistry:RegisterCallback(event, fn, owner)
+  self.callbacks[event] = self.callbacks[event] or {}
+  table.insert(self.callbacks[event], { fn = fn, owner = owner })
+end
+function EventRegistry:TriggerEvent(event, ...)
+  for _, c in ipairs(self.callbacks[event] or {}) do c.fn(c.owner, ...) end
+end
+local function never() error("Gargoyle must never change talents") end
+C_Traits.PurchaseRank, C_Traits.RefundRank, C_Traits.CommitConfig, C_ClassTalents.CommitConfig = never, never, never, never
+function fake.redrawTalents()
+  EventRegistry:TriggerEvent("TalentFrameBase.ButtonsUpdated", 500)
+end
+function fake.openTalents()
+  if not PlayerSpellsFrame then
+    PlayerSpellsFrame = fake.new("Frame", "PlayerSpellsFrame", UIParent)
+    local frame = fake.new("Frame", nil, PlayerSpellsFrame)
+    PlayerSpellsFrame.TalentsFrame = frame
+    frame.ButtonsParent = fake.new("Frame", nil, frame)
+    frame.Background = fake.new("Texture", nil, frame)
+    frame.buttons = {}
+    function frame:GetConfigID() return fake.talentFrameConfig or fake.char.configID end
+    function frame:EnumerateAllTalentButtons() return pairs(self.buttons) end
+    frame.PurchaseRank, frame.CommitConfig = never, never
+    fake.fire("ADDON_LOADED", "Blizzard_PlayerSpells")
+  end
+  local frame = PlayerSpellsFrame.TalentsFrame
+  frame.buttons = {}
+  for _, id in ipairs(C_Traits.GetTreeNodes(500)) do
+    local button = fake.new("Button", nil, frame.ButtonsParent)
+    button.nodeID = id
+    function button:GetNodeID() return self.nodeID end
+    frame.buttons[button] = true
+  end
+  frame:Show()
+  fake.redrawTalents()
 end
 GetNumSkillLines = function() return #fake.char.skills end
 GetSkillLineInfo = function(i)
@@ -499,9 +543,11 @@ def test_features_turn_on_and_off():
     box.scripts.OnClick(box)
     assert game.db.modules.raids is False
     assert game.fake.button("Raid signups") is None and game.fake.button("Characters") is not None
-    other = ns.optionBoxes.characters
-    other.SetChecked(other, False)
-    other.scripts.OnClick(other)
+    assert game.fake.button("Talent plans") is not None
+    for key in ("characters", "talents"):
+        other = ns.optionBoxes[key]
+        other.SetChecked(other, False)
+        other.scripts.OnClick(other)
     assert game.fake.button("Characters") is None and "Every feature is turned off" in game.texts()
     box.SetChecked(box, True)
     box.scripts.OnClick(box)
@@ -663,6 +709,25 @@ def test_professions_without_the_skills_page():
     assert [(k.name, k.rank) for k in game.db.characters["Player-1-00ABCDEF"].skills.values()] == [("Tailoring", 290), ("Fishing", 75)]
 
 
+def test_the_addons_own_images_are_there_for_the_game():
+    """Every image the addons name is in them, as a TGA the game reads: uncompressed, 32-bit
+    (so it can be see-through), square, sides a power of two."""
+    import re
+    import struct
+    window = (ADDON / "Window.lua").read_text(encoding="utf-8")
+    assert re.search(r'local MEDIA = "([^"]+)"', window).group(1) == r"Interface\\AddOns\\Gargoyle\\Media\\"
+    images = [ADDON / "Media" / f"{name}.tga" for name in re.findall(r'MEDIA \.\. "(\w+)"', window)]
+    for toc in (ADDON / "Gargoyle.toc", TOOLTIPS / "Gargoyle_Tooltips.toc"):
+        icon = re.search(r"^## IconTexture: Interface\\AddOns\\(\S+)$", toc.read_text(encoding="utf-8"), re.M).group(1)
+        images.append(PROJECT / "addon" / (icon.replace("\\", "/") + ".tga"))
+    assert len(images) == 5
+    for image in images:
+        data = image.read_bytes()
+        kind, (width, height), depth = data[2], struct.unpack("<HH", data[12:16]), data[16]
+        assert kind == 2 and depth == 32 and width == height and width & (width - 1) == 0, image
+        assert len(data) >= 18 + data[0] + width * height * 4, image
+
+
 def test_debug_command_saves_what_the_game_answers():
     game = Game(sync_lua(API, {}))
     game.slash("debug")
@@ -670,7 +735,12 @@ def test_debug_command_saves_what_the_game_answers():
     assert report.names.UnitName[1] == "Jainamage" and report.names.UnitFullName.missing is True
     assert report.talents.configID == 77 and report.talents.nodes == 4 and len(report.talents.groups) == 3
     assert report.talents.spent[1].definition.spellID == 11210 and report.read.talents == 2
+    assert report.plans.currency[1].quantity == 0 and report.plans.firstNode.canPurchaseRank is False
+    assert report.plans.window == "<not loaded>" and report.plans.progress == "<no plan>"
     assert "/reload (or log out) to save the answers" in game.printed()
+    game.fake.openTalents()
+    game.slash("debug")
+    assert game.db.debug.plans.window.config[1] == 77 and game.db.debug.plans.window.enumerate == "function"
 
 
 def test_talents_wait_for_the_game_to_load_them_and_full_names():
@@ -1117,6 +1187,172 @@ def test_calendar_marks_can_be_turned_off_and_follow_new_raids():
 def test_the_calendar_loaded_before_gargoyle():
     game = Game(sync_lua(API, {}), "fake.openCalendar(2027, 1)")
     assert mark_on(game, calendar_day(game, NOW + 86400)).shown
+
+
+# ---- Talent plans ----
+
+PLAN = [  # a build saved on the website, as /api/app/sync sends its talents
+    {"tree": 1, "name": "Arcane Subtlety", "spells": [11210], "rank": 2},  # (the game has 2: done)
+    {"tree": 1, "name": "Arcane Focus", "spells": [11222], "rank": 3},  # found by its spell
+    {"tree": 2, "name": "Improved Fireball", "spells": [1], "rank": 5},  # by its name, in its own tree
+    {"tree": 3, "name": "Improved Frostbolt", "spells": [11070], "rank": 2},  # the game has 5: more than planned
+    {"tree": 1, "name": "Not In The Game", "spells": [5], "rank": 1},
+]
+PLANS_API = {**API, "characters": API["characters"] + [
+    {"id": 14, "name": "Fire build", "class": "mage", "guild": None, "role": None, "talents": PLAN},
+    {"id": 15, "name": "Kept up to date", "class": "mage", "guild": None, "role": None, "game": "Player-1-00ABCDEF",
+     "talents": PLAN},  # (this character itself: its talents are the game's)
+    {"id": 16, "name": "Warlock build", "class": "warlock", "guild": None, "role": None, "talents": PLAN},
+    {"id": 17, "name": "No talents", "class": "mage", "guild": None, "role": None, "talents": []},
+]}
+# The same name in another tree: the plan's Improved Fireball is the one in its own tree.
+SAME_NAME = 'table.insert(fake.char.talents[1], { "Improved Fireball", 3, 1, 0, 5, 7777 })'
+CHOSEN = 'GargoyleDB = { talentPlans = { ["Player-1-00ABCDEF#1"] = 14 } }'
+
+
+def talent_marks(game):
+    """Gargoyle's marks on the talent window: talent (node id) -> (state, planned points)."""
+    return {w.over.nodeID: (w.state, w.want.text) for w in game.fake.widgets.values()
+            if w.kind == "Frame" and w.state and w.over and w.IsVisible(w)}
+
+
+def on_the_bar(game, kind):
+    """Gargoyle's widgets of that kind on its bar on the talent window."""
+    find = game.lua.eval("""function(kind)
+      local found = {}
+      for _, w in ipairs(fake.widgets) do
+        if w.kind == kind and w.parent and w.parent.parent == PlayerSpellsFrame.TalentsFrame then table.insert(found, w) end
+      end
+      return found
+    end""")
+    return list(find(kind).values())
+
+
+def plan_menu(game):
+    """What the talent window's plan picker offers, and what it shows."""
+    (menu,) = on_the_bar(game, "DropdownButton")
+    menu.GenerateMenu(menu)
+    return [r.text for r in menu.radios.values()], menu.text
+
+
+def bar_text(game):
+    (status,) = [w for w in on_the_bar(game, "FontString") if w.text != "Talent plan"]
+    return status.text if status.IsVisible(status) else None
+
+
+def test_a_talent_plan_marks_the_talent_window():
+    game = Game(sync_lua(PLANS_API, {}), SAME_NAME)
+    game.fake.openTalents()
+    assert plan_menu(game) == (["No plan", "Fire build"], "No plan") and talent_marks(game) == {}
+    assert bar_text(game) == "Pick one of your Gargoyle characters to follow its talents."
+    game.choose_in("No plan", "Fire build")
+    assert game.db.talentPlans["Player-1-00ABCDEF#1"] == 14
+    # No points to spend: marked, not glowing. Arcane Subtlety is done; Frostbolt has too many.
+    assert talent_marks(game) == {1002: ("later", "|cffffffff3|r"), 2001: ("later", "|cffffffff5|r"),
+                                  3001: ("over", "|cffff50502|r")}
+    assert bar_text(game) == "4 of 12 planned points spent  ·  |cffe05050" "1 with more points than the plan|r"
+    # A point to spend: the talents it can go in glow, until the plan's points are in.
+    game.lua.execute("fake.char.unspent = 1")
+    game.fake.redrawTalents()
+    assert talent_marks(game)[1002][0] == "now" and talent_marks(game)[2001][0] == "now"
+    assert "glowing: a point can go in now" in bar_text(game)
+    game.lua.execute("fake.char.talents[1][2][4] = 3; fake.char.talents[2][1][7] = true")  # (and Fireball locked)
+    game.fake.redrawTalents()
+    assert talent_marks(game) == {2001: ("later", "|cffffffff5|r"), 3001: ("over", "|cffff50502|r")}
+    game.lua.execute("fake.char.talents[2][1][4] = 5; fake.char.talents[3][1][4] = 2")
+    game.fake.redrawTalents()
+    assert talent_marks(game) == {} and bar_text(game) == "|cff40c040Plan done|r"
+    # Back to no plan: no marks.
+    game.choose_in("Fire build", "No plan")
+    assert talent_marks(game) == {} and game.db.talentPlans["Player-1-00ABCDEF#1"] is None
+
+
+def test_the_talent_plans_tab():
+    game = Game(sync_lua(PLANS_API, {}), SAME_NAME)
+    game.slash()
+    game.click("Talent plans")
+    assert "Pick one of your Gargoyle characters to follow its talents." in game.texts()
+    game.choose_in("No plan", "Fire build")
+    text = game.texts()
+    assert "Follow the talents of" in text and "4 of 12 planned points spent" in text
+    assert "|cffffffffArcane Focus|r  |cffb0b0b00/3|r\n|cffffffffImproved Fireball|r  |cffb0b0b00/5|r" in text
+    assert "|cffe05050Improved Frostbolt|r  |cffb0b0b05/2|r\n|cffb0b0b0Not In The Game (not in the game's talents)|r" in text
+    # Picked here, it's picked on the talent window too.
+    game.fake.openTalents()
+    assert plan_menu(game)[1] == "Fire build" and len(talent_marks(game)) == 3
+
+
+def test_a_plan_for_each_character_and_set_of_talents_kept_after_a_reload():
+    game = Game(sync_lua(PLANS_API, {}), CHOSEN)
+    game.fake.openTalents()
+    assert len(talent_marks(game)) == 3
+    # The second set of talents (dual spec) has its own plan: none yet.
+    game.lua.execute('C_SpecializationInfo.GetActiveSpecGroup = function() return 2 end')
+    game.lua.globals().fake.fire("ACTIVE_TALENT_GROUP_CHANGED")
+    assert talent_marks(game) == {} and plan_menu(game)[1] == "No plan"
+    # Another character on the same game account: none either.
+    other = Game(sync_lua(PLANS_API, {}), CHOSEN + '; fake.char.guid = "Player-1-00000002"')
+    other.fake.openTalents()
+    assert talent_marks(other) == {}
+
+
+def test_talent_marks_only_on_the_talents_in_use_and_when_turned_on():
+    game = Game(sync_lua(PLANS_API, {}), CHOSEN)
+    game.fake.openTalents()
+    game.lua.execute("fake.talentFrameConfig = 78")  # the other set of talents, shown locked
+    game.fake.redrawTalents()
+    assert talent_marks(game) == {}
+    game.lua.execute("fake.talentFrameConfig = nil")
+    game.ns.SetEnabled("talents", False)
+    assert talent_marks(game) == {} and bar_text(game) is None
+    game.ns.SetEnabled("talents", True)
+    assert len(talent_marks(game)) == 3
+    # In combat nothing is redrawn (talents can't change then), until it ends.
+    game.lua.execute("fake.combat = true; fake.char.talents[1][2][4] = 3")
+    game.fake.redrawTalents()
+    assert len(talent_marks(game)) == 3
+    game.lua.execute("fake.combat = false")
+    game.fake.fire("PLAYER_REGEN_ENABLED")
+    assert len(talent_marks(game)) == 2
+
+
+def test_the_talent_window_loaded_before_gargoyle():
+    game = Game(sync_lua(PLANS_API, {}), CHOSEN + "; fake.openTalents()")
+    assert len(talent_marks(game)) == 3
+
+
+def test_talent_plans_without_data_or_with_an_older_app():
+    game = Game()
+    game.fake.openTalents()
+    assert bar_text(game) == "No data from the Gargoyle app yet." and plan_menu(game)[0] == ["No plan"]
+    old_app = sync_lua(PLANS_API, {}).replace("sends_talents = true,", "")
+    assert old_app != sync_lua(PLANS_API, {})
+    game = Game(old_app)
+    game.fake.openTalents()
+    assert bar_text(game) == "Update the Gargoyle app to follow talent plans."
+    junk = ('GargoyleSync = { version = 1, sends_talents = true, characters = {'
+            ' { id = 1, name = "A", class = "mage", talents = "junk" },'
+            ' { id = 2, name = "B", class = "mage", talents = { 5, { tree = "x", name = 1, rank = 99 }, { tree = 1, name = "Arcane Focus", rank = 0 } } },'
+            ' { id = 3, name = "C", class = "mage", talents = { { tree = 1, name = "Arcane Focus", rank = 2, spells = "x" } } } } }')
+    game = Game(junk, 'GargoyleDB = { talentPlans = { ["Player-1-00ABCDEF#1"] = 3 } }')
+    game.fake.openTalents()
+    assert plan_menu(game) == (["No plan", "C"], "C")
+    # (and the talents with points the plan doesn't have: none planned)
+    assert talent_marks(game) == {1002: ("later", "|cffffffff2|r"), 1001: ("over", "|cffff50500|r"),
+                                  3001: ("over", "|cffff50500|r")}
+
+
+def test_plan_talents_are_found_by_spell_then_name_in_their_tree_then_name():
+    game = Game()
+    match = game.lua.eval("""function(ns)
+      local nodes = { { id = 1, tab = 1, name = "Focus", spell = 10, max = 5 }, { id = 2, tab = 2, name = "Focus", spell = 20, max = 5 },
+                      { id = 3, tab = 3, name = "Other", spell = 30, max = 3 } }
+      local plan = { talents = { { tree = 2, name = "focus", spells = { 99 }, rank = 2 }, { tree = 3, name = "Focus", spells = {}, rank = 1 },
+                                 { tree = 1, name = "x", spells = { 30 }, rank = 9 }, { tree = 1, name = "Gone", spells = {}, rank = 1 } } }
+      local wanted, missing = ns.Talents.Match(plan, nodes)
+      return wanted[1], wanted[2], wanted[3], #missing, missing[1].name
+    end""")
+    assert match(game.ns) == (1, 2, 3, 1, "Gone")
 
 
 # ---- Gargoyle Damage Tooltips (addon/Gargoyle_Tooltips) ----

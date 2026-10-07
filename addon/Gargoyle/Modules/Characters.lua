@@ -35,39 +35,15 @@ end
 
 -- ---- Reading the character ----
 
-local function spellName(spellID)
-  if not spellID or spellID == 0 then return end
-  if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(spellID) end
-  if GetSpellInfo then return (GetSpellInfo(spellID)) end
-end
-
--- WoW Forever: each class has one talent tree (C_Traits, as Blizzard's talent window reads
--- it), with the classic three trees as groups in it. Each talent: its tree number (the
--- group's place), name, spell and the points spent.
+-- WoW Forever: the talents with points in them, from the class's one talent tree
+-- (ns.TalentNodes). Each: its tree number, name, spell and the points spent.
 local function readTreeTalents()
-  local traits = C_Traits
   local configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID()
-  local config = configID and traits.GetConfigInfo(configID)
-  local treeID = config and config.treeIDs and config.treeIDs[1]
-  if not treeID then return end
-  local groups = traits.GetGroupDisplayInfoByTreeID and traits.GetGroupDisplayInfoByTreeID(treeID) or {}
-  table.sort(groups, function(a, b) return (a.orderIndex or 0) < (b.orderIndex or 0) end)
-  local tabs = {} -- group id -> tree number
-  for i, group in ipairs(groups) do tabs[group.groupID] = i end
+  local nodes = ns.TalentNodes(configID)
+  if not nodes then return end
   local talents = {}
-  for _, nodeID in ipairs(traits.GetTreeNodes(treeID) or {}) do
-    local node = traits.GetNodeInfo(configID, nodeID)
-    local rank = node and (node.ranksPurchased or node.activeRank) or 0
-    if rank > 0 then
-      local entryID = (node.activeEntry and node.activeEntry.entryID) or (node.entryIDs and node.entryIDs[1])
-      local entry = entryID and traits.GetEntryInfo(configID, entryID)
-      local definition = entry and entry.definitionID and traits.GetDefinitionInfo(entry.definitionID)
-      local spell = definition and definition.spellID
-      local name = definition and ((definition.overrideName ~= "" and definition.overrideName) or spellName(spell))
-      local tab
-      for _, groupID in ipairs(node.groupIDs or {}) do tab = tab or tabs[groupID] end
-      talents[#talents + 1] = { tab = tab, rank = rank, name = name, spell = spell }
-    end
+  for _, node in ipairs(nodes) do
+    if node.rank > 0 then talents[#talents + 1] = { tab = node.tab, rank = node.rank, name = node.name, spell = node.spell } end
   end
   return talents
 end

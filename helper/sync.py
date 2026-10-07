@@ -7,7 +7,8 @@
 - Fetching: gets your raids from the website and writes them into the Gargoyle_Sync data
   addon, which the game loads the next time you log in or /reload.
 - Versions: reads which addon and app versions are current from the latest GitHub release,
-  and downloads the addon from it (installed by addon_install.py).
+  and downloads the addon (installed by addon_install.py) and the app's installer
+  (self_update.py) from it.
 
 It only ever touches the Gargoyle addon's saved data, the Gargoyle_Sync folder and (when
 installing or updating it) the Gargoyle addon's own folder.
@@ -23,11 +24,12 @@ from urllib.parse import urlsplit
 import requests
 
 import addon_install
+import self_update
 import signing
 import sync_file
 import wow_paths
 from lua_io import LuaError, read_saved
-from version import ADDON_SIGNING_KEY, APP_VERSION, RELEASES
+from version import ADDON_SIGNING_KEY, APP_VERSION, RELEASES, SIGNED
 
 REFRESH_SECONDS = 300  # fetch raids at least this often
 SENT_KEEP_DAYS = 30
@@ -117,6 +119,18 @@ class Syncer:
         signed = signing.verify(body, signature, ADDON_SIGNING_KEY)
         if signed["version"] != offer["version"] or signed["tag"] != offer["tag"]:
             raise signing.SignatureError("the signed manifest is for a different release")
+        return signed
+
+    def signed_app(self, app):
+        """The signed manifest of the release's app installer (self_update.py), checked
+        against the release key and the installer `app` (addon_install.app_installer).
+        SignatureError if it isn't signed (yet) or is another installer's."""
+        manifest, signature_file = signing.APP_MANIFEST
+        body = self.fetch(f"{SIGNED}/{manifest}", 16 * 1024)
+        signature = self.fetch(f"{SIGNED}/{signature_file}", 1024)
+        signed = signing.verify_app(body, signature, ADDON_SIGNING_KEY)
+        if not self_update.matches(signed, app):
+            raise signing.SignatureError("the signed installer is another release's")
         return signed
 
     def download(self, url, limit):

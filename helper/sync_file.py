@@ -12,6 +12,7 @@ from lua_io import to_lua
 
 VERSION = 1  # GargoyleSync.version; the addon ignores a table it doesn't know
 ACTION_ID = re.compile(r"^[A-Za-z0-9:._-]{1,40}$")  # what the website accepts (app_api.py)
+MAX_TALENTS, MAX_SPELLS = 60, 10  # per character's talent plan, per talent
 STATUSES = ("accepted", "tentative", "declined")
 ROLES = ("tank", "healer", "dps")
 
@@ -53,11 +54,22 @@ def _guild(g):
             "officer": g.get("officer") is True, "raids": [x for x in map(_raid, _list(g.get("raids"))) if x]}
 
 
+def _talent(t):
+    if not isinstance(t, dict) or not _text(t.get("name"), 60):
+        return None
+    tree, rank = _int(t.get("tree")), _int(t.get("rank"))
+    if tree is None or not 1 <= tree <= 5 or rank is None or not 1 <= rank <= 10:
+        return None
+    return {"tree": tree, "name": _text(t["name"], 60), "rank": rank,
+            "spells": [s for s in _list(t.get("spells")) if _int(s) is not None and s > 0][:MAX_SPELLS]}
+
+
 def _character(c):
     if not isinstance(c, dict) or _int(c.get("id")) is None or not _text(c.get("name"), 60):
         return None
     out = {"id": c["id"], "name": _text(c["name"], 60), "class": _text(c.get("class"), 20),
-           "guild": _int(c.get("guild")), "role": _text(c.get("role"), 10)}
+           "guild": _int(c.get("guild")), "role": _text(c.get("role"), 10),
+           "talents": [x for x in map(_talent, _list(c.get("talents"))) if x][:MAX_TALENTS]}
     if _text(c.get("game"), 80):
         out.update(game=_text(c["game"], 80), read=_int(c.get("read")))
     return out
@@ -72,11 +84,13 @@ def sync_table(api, done, imports=None):
     """GargoyleSync from the website's /api/app/sync answer, plus the outbox ids the
     website has answered ({id: "saved" / "stale" / ...}) so the addon can let them go, and
     what the website said about each picked character ({key: "saved" / "limit" / ...}).
-    can_make_raids tells the addon this app sends raids made in game (older ones don't)."""
+    can_make_raids tells the addon this app sends raids made in game, and sends_talents that
+    it passes on each character's talents for talent plans (older ones do neither)."""
     api = api if isinstance(api, dict) else {}
     return {
         "version": VERSION,
         "can_make_raids": True,
+        "sends_talents": True,
         "synced": _int(api.get("time")),
         "user": _text(api.get("user"), 60),
         "characters": [x for x in map(_character, _list(api.get("characters"))) if x],

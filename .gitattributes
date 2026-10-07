@@ -1,2 +1,4 @@
 # The signed release files reach the build byte for byte: git mustn't change their line endings.
 release/** -text
+# Images go out byte for byte (the release signature covers them).
+*.tga binary
