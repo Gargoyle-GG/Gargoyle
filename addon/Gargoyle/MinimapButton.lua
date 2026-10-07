@@ -71,14 +71,15 @@ function ns.CreateMinimapButton()
   button:RegisterForDrag("LeftButton")
   button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
 
-  -- The round minimap-button look: a dark disc, the icon, and the gold ring over them.
+  -- The round minimap-button look: a dark disc, the icon, and the gold ring over them (laid
+  -- out for the game's current ring art: centred on the button, as minimap buttons do now).
   local background = button:CreateTexture(nil, "BACKGROUND")
-  background:SetSize(20, 20)
-  background:SetPoint("TOPLEFT", 7, -5)
+  background:SetSize(24, 24)
+  background:SetPoint("CENTER")
   background:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
   local icon = button:CreateTexture(nil, "ARTWORK")
-  icon:SetSize(17, 17)
-  icon:SetPoint("TOPLEFT", 7, -6)
+  icon:SetSize(18, 18)
+  icon:SetPoint("CENTER")
   icon:SetTexture(ns.ROUND_ICON)
   icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
   if button.CreateMaskTexture and icon.AddMaskTexture then
@@ -88,7 +89,7 @@ function ns.CreateMinimapButton()
     icon:AddMaskTexture(mask)
   end
   local ring = button:CreateTexture(nil, "OVERLAY")
-  ring:SetSize(53, 53)
+  ring:SetSize(50, 50)
   ring:SetPoint("TOPLEFT")
   ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
   -- New raids you haven't seen: the game's calendar-invite glow, pulsing (RaidAlerts.lua).

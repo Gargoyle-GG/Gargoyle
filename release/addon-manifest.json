@@ -2,11 +2,11 @@
  "files": {
   "Gargoyle/Core.lua": "64ec174355ac540dc4de7cb4effd75ba12131ce4f881f788bff231016bf5a603",
   "Gargoyle/Debug.lua": "2381692f73b045d99035ec3ad5470ff18af973575e91efa0be0fb8a7a3286802",
-  "Gargoyle/Gargoyle.toc": "2e45171a5d54f875beb67c5a28f4446f31c68c4109ca3136aaa66b11ac314e4a",
+  "Gargoyle/Gargoyle.toc": "be31541c0dfc27564f8b1e30f14a9bf96a5ec78e3829d7048c3a2c53991cc593",
   "Gargoyle/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224",
-  "Gargoyle/Media/Portrait.tga": "6868c6dfbb79a410f0c26b34ae2826c52a66bf6ee667c2ae5ab69f1ce858323e",
+  "Gargoyle/Media/Portrait.tga": "6b52200f15c92fdffe1c1afc62e67c983ea586baacaa126bc7db92455097edd8",
   "Gargoyle/Media/Round.tga": "0321c1da27a4445d53deb145b6d973345c8cd82465455719fd2d7430af9ca3e1",
-  "Gargoyle/MinimapButton.lua": "bcedfd1284866e2956f6fd6984dad4a2feba8c51644fbcd6864408bc8e57c78c",
+  "Gargoyle/MinimapButton.lua": "4fd287b79868e975538d801f9d214ead16ebaefca86f83bfd17250d13f8703bb",
   "Gargoyle/Modules/Calendar.lua": "7c2b1680f0039f437c93a4b2de7f52c5a5a095db67bdde7062fb7be8ed9c4a29",
   "Gargoyle/Modules/Characters.lua": "f1f37656817d54dd97a26fd674fe003c2cc30a56c3868448fb476e30427cdf4f",
   "Gargoyle/Modules/RaidAlerts.lua": "1a17d6f51d0f061d5008dbc4b396a6c70e1b598901c9371ff54698705d6acc2a",
@@ -14,6 +14,6 @@
   "Gargoyle/Modules/Talents.lua": "5ad0c60dbbbaf80d61420430a5153b18522c19fac0eab9136238f59d330cd2bb",
   "Gargoyle/Window.lua": "f6a4447ec2cb977fbd7c432cfefec1135dbc7ab8073b6be70a4f6063702169a0"
  },
- "tag": "v1.5.0-addon0.7.0-tips1.0.1",
- "version": "0.7.0"
+ "tag": "v1.5.0-addon0.7.1-tips1.0.1",
+ "version": "0.7.1"
 }
