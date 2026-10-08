@@ -93,6 +93,14 @@ local function loadDB()
   db.characters = tableOr(db.characters)
   -- Talent plans (Modules/Talents.lua): "<character key>#<talent set>" -> the website character followed.
   db.talentPlans = tableOr(db.talentPlans)
+  -- The dungeon journal (Modules/Journal.lua): the place last looked at, and for each character
+  -- you play, the website character whose upgrades it marks (false: no one).
+  db.journal = tableOr(db.journal)
+  db.journal.chars = tableOr(db.journal.chars)
+  if type(db.journal.place) ~= "number" then db.journal.place = nil end
+  -- (and the view shown, Bosses, Map or Quests, and the boss's Loot or Abilities)
+  if type(db.journal.view) ~= "string" then db.journal.view = nil end
+  if type(db.journal.part) ~= "string" then db.journal.part = nil end
   -- (db.calendar: false when Gargoyle's raids are kept off the game's calendar)
   db.minimap = tableOr(db.minimap) -- the minimap button: angle (degrees), hide
   -- Raid alerts (Modules/RaidAlerts.lua): newRaids, reminders (false = off), and the raids
@@ -227,6 +235,22 @@ local function readPlan(raw)
   return plan
 end
 
+-- The dungeon and raid drops the website's planner found are upgrades for a character:
+-- item id -> { gain, gain in % }.
+local function readUpgrades(raw)
+  if type(raw) ~= "table" then return end
+  local items, count = {}, 0
+  for _, row in ipairs(list(raw.items)) do
+    if count == 700 then break end
+    if type(row) == "table" and number(row[1]) and number(row[2]) then
+      items[row[1]] = { row[2], number(row[3]) or 0 }
+      count = count + 1
+    end
+  end
+  return { items = items, count = count, spec = text(raw.spec, 40), level = number(raw.level), stale = raw.stale == true,
+           at = number(raw.at) }
+end
+
 function ns.ReadSync()
   local sync = { characters = {}, guilds = {}, done = {}, removed = {}, imports = {} }
   local raw = GargoyleSync
@@ -235,11 +259,13 @@ function ns.ReadSync()
   sync.synced, sync.user = number(raw.synced), text(raw.user, 60)
   sync.makesRaids = raw.can_make_raids == true -- (the app sends raids made in game; older ones don't)
   sync.sendsTalents = raw.sends_talents == true -- (and characters' talents, for talent plans)
+  sync.sendsUpgrades = raw.sends_upgrades == true -- (and their upgrades, for the dungeon journal)
   for _, c in ipairs(list(raw.characters)) do
     if type(c) == "table" and number(c.id) and text(c.name, 60) then
       sync.characters[#sync.characters + 1] = {
         id = c.id, name = text(c.name, 60), class = text(c.class, 20) or "", guild = number(c.guild),
         role = text(c.role, 10), game = text(c.game, 80), read = number(c.read), talents = readPlan(c.talents),
+        upgrades = readUpgrades(c.upgrades),
       }
     end
   end

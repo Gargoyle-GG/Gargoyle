@@ -13,6 +13,7 @@ from lua_io import to_lua
 VERSION = 1  # GargoyleSync.version; the addon ignores a table it doesn't know
 ACTION_ID = re.compile(r"^[A-Za-z0-9:._-]{1,40}$")  # what the website accepts (app_api.py)
 MAX_TALENTS, MAX_SPELLS = 60, 10  # per character's talent plan, per talent
+MAX_UPGRADES = 700  # per character: the drops that are upgrades for it (the website's limit too)
 STATUSES = ("accepted", "tentative", "declined")
 ROLES = ("tank", "healer", "dps")
 
@@ -64,6 +65,25 @@ def _talent(t):
             "spells": [s for s in _list(t.get("spells")) if _int(s) is not None and s > 0][:MAX_SPELLS]}
 
 
+def _number(value, low, high):
+    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and low <= value <= high
+    return value if ok else None
+
+
+def _upgrades(u):
+    """The drops the website's planner found are upgrades: [[item id, gain, gain %]], best first."""
+    if not isinstance(u, dict):
+        return None
+    rows = []
+    for row in _list(u.get("items"))[:MAX_UPGRADES]:
+        if (isinstance(row, list) and len(row) == 3 and _int(row[0]) is not None and 0 < row[0] < 10_000_000
+                and _number(row[1], 0, 100_000) is not None and _number(row[2], 0, 1000) is not None):
+            rows.append([row[0], row[1], row[2]])
+    level = _int(u.get("level"))
+    return {"items": rows, "spec": _text(u.get("spec"), 40), "level": level if level and 1 <= level <= 60 else None,
+            "stale": u.get("stale") is True, "at": _int(u.get("at"))}
+
+
 def _character(c):
     if not isinstance(c, dict) or _int(c.get("id")) is None or not _text(c.get("name"), 60):
         return None
@@ -72,6 +92,9 @@ def _character(c):
            "talents": [x for x in map(_talent, _list(c.get("talents"))) if x][:MAX_TALENTS]}
     if _text(c.get("game"), 80):
         out.update(game=_text(c["game"], 80), read=_int(c.get("read")))
+    upgrades = _upgrades(c.get("upgrades"))
+    if upgrades:
+        out["upgrades"] = upgrades
     return out
 
 
@@ -84,13 +107,15 @@ def sync_table(api, done, imports=None):
     """GargoyleSync from the website's /api/app/sync answer, plus the outbox ids the
     website has answered ({id: "saved" / "stale" / ...}) so the addon can let them go, and
     what the website said about each picked character ({key: "saved" / "limit" / ...}).
-    can_make_raids tells the addon this app sends raids made in game, and sends_talents that
-    it passes on each character's talents for talent plans (older ones do neither)."""
+    can_make_raids tells the addon this app sends raids made in game, sends_talents that it
+    passes on each character's talents for talent plans, and sends_upgrades that it passes on
+    their upgrade picks for the dungeon journal (older ones do none of these)."""
     api = api if isinstance(api, dict) else {}
     return {
         "version": VERSION,
         "can_make_raids": True,
         "sends_talents": True,
+        "sends_upgrades": True,
         "synced": _int(api.get("time")),
         "user": _text(api.get("user"), 60),
         "characters": [x for x in map(_character, _list(api.get("characters"))) if x],

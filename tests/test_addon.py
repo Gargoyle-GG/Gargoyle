@@ -362,6 +362,57 @@ function fake.spellTooltip(spellID) -- hover a spell: the tooltip's lines
   if fake.tooltipHooks[1] then fake.tooltipHooks[1](GameTooltip, { type = 1, id = spellID }) end
   return table.concat(GameTooltip.lines, "\n")
 end
+-- The dungeon journal's side of the game: where you are (GetInstanceInfo), and items as the
+-- game knows them. An item in fake.uncached isn't loaded yet: it answers nothing until
+-- fake.loadItems(). Hovering an item runs the item tooltip hooks, as the game does.
+fake.instance = { "Elwynn Forest", "none", 0, "", 5, 0, false, 0 }
+GetInstanceInfo = function() return unpack(fake.instance) end
+fake.items, fake.uncached, fake.itemWaits, fake.worn = {}, {}, {}, {}
+C_Item = {
+  GetItemInfo = function(id)
+    local it = fake.items[id]
+    if not it or fake.uncached[id] then return nil end
+    return it[1], "link", it[2], 30, 25, "Armor", "Cloth", 1, "INVTYPE_CHEST", it[3]
+  end,
+  IsEquippedItem = function(id) return fake.worn[id] == true end,
+  GetItemQualityColor = function(q) return 1, 1, 1, "ff00000" .. q end,
+}
+Item = {}
+function Item:CreateFromItemID(id)
+  return { ContinueOnItemLoad = function(_, fn) table.insert(fake.itemWaits, { id = id, fn = fn }) end }
+end
+function fake.loadItems()
+  local waits = fake.itemWaits
+  fake.itemWaits = {}
+  for _, w in ipairs(waits) do
+    fake.uncached[w.id] = nil
+    w.fn()
+  end
+end
+function GameTooltip:SetItemByID(id)
+  self.lines = { (fake.items[id] or { "?" })[1] }
+  if fake.tooltipHooks[0] then fake.tooltipHooks[0](self, { type = 0, id = id }) end
+end
+function GameTooltip:SetSpellByID(id) self.lines = { "spell " .. id } end
+function fake.itemTooltip(id) -- hover an item anywhere: the tooltip's lines
+  GameTooltip:SetOwner(UIParent)
+  GameTooltip:SetItemByID(id)
+  return table.concat(GameTooltip.lines, "\n")
+end
+function methods:SetTexture(t) self.texture = t end
+function methods:SetTexCoord(...) self.coords = string.format("%%g,%%g,%%g,%%g", ...) end
+-- Quests done (C_QuestLog), abilities' text (C_Spell.GetSpellDescription), and the game's own
+-- map pin, which records where it was put (only "Show on map" may set it).
+fake.questsDone, fake.spellText, fake.pins = {}, {}, {}
+C_QuestLog = { IsQuestFlaggedCompleted = function(id) return fake.questsDone[id] == true end }
+C_Spell.GetSpellDescription = function(id) return fake.spellText[id] or "" end
+UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { uiMapID = map, x = x, y = y } end }
+C_Map = { CanSetUserWaypointOnMap = function(map) return map ~= 9999 end,
+          SetUserWaypoint = function(point) table.insert(fake.pins, point) end }
+C_SuperTrack = { SetSuperTrackedUserWaypoint = function(on) fake.tracking = on end }
+-- (nothing may ever equip, use or pick up an item)
+local function noTouching() error("Gargoyle must never change your items") end
+EquipItemByName, UseItemByName, PickupItem, C_Item.EquipItemByName, C_Item.PickupItemByID = noTouching, noTouching, noTouching, noTouching, noTouching
 Settings = {
   RegisterCanvasLayoutCategory = function(panel, name) return { name = name, GetID = function() return 7 end } end,
   RegisterAddOnCategory = function(category) fake.category = category end,
@@ -390,7 +441,7 @@ API = {  # what /api/app/sync answers (see app_api.py)
 
 
 class Game:
-    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False):
+    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None):
         self.lua = lua51.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(FAKE_GAME)
         self.fake = self.lua.globals().fake
@@ -399,12 +450,17 @@ class Game:
             self.lua.execute(sync)
         if saved:
             self.lua.execute(saved)
+        if before:  # (game state from before the login: where you are...)
+            self.lua.execute(before)
         self.ns = self.lua.table()
         run = self.lua.eval('function(src, name, ns) local f = assert(loadstring(src, "@" .. name)); f("Gargoyle", ns) end')
         toc = (ADDON / "Gargoyle.toc").read_text(encoding="utf-8").splitlines()
         for name in (line.strip() for line in toc):
             if name and not name.startswith("#"):
-                run((ADDON / name.replace("\\", "/")).read_text(encoding="utf-8"), name, self.ns)
+                source = (ADDON / name.replace("\\", "/")).read_text(encoding="utf-8")
+                if journal is not None and name == "Data\\Journal.lua":
+                    source = journal  # (a small journal for the test, in place of the real one)
+                run(source, name, self.ns)
         self.fake.fire("ADDON_LOADED", "Gargoyle")
         if tooltips:  # (the game loads it after Gargoyle: its name comes later)
             self.tips_ns = self.lua.table()
@@ -544,7 +600,8 @@ def test_features_turn_on_and_off():
     assert game.db.modules.raids is False
     assert game.fake.button("Raid signups") is None and game.fake.button("Characters") is not None
     assert game.fake.button("Talent plans") is not None
-    for key in ("characters", "talents"):
+    assert game.fake.button("Dungeons") is not None
+    for key in ("characters", "talents", "journal"):
         other = ns.optionBoxes[key]
         other.SetChecked(other, False)
         other.scripts.OnClick(other)
@@ -1459,3 +1516,244 @@ def test_every_spell_of_every_class_has_a_breakdown(token):
         assert result is not None, spell_id
         rows = [r[1] for r in result.values()]
         assert any(r.startswith("Average") for r in rows), (spell_id, rows)
+
+
+# ---- The dungeon journal (Modules/Journal.lua) ----
+
+JOURNAL = """
+local _, ns = ...
+ns.JOURNAL = {
+  { id = 36, name = "Deadmines", kind = "dungeon", size = 5, min = 17, max = 26, zone = "Westfall",
+    bosses = {
+      { name = "Rhahk'Zor", loot = { { 872, 20 }, { 5187, 80 } }, abilities = { { 6304, "Rhahk'Zor Slam" } } },
+      { name = "Edwin VanCleef", loot = { { 5193, 15 }, { 5191, 15 }, { 10399 } }, abilities = {} },
+    },
+    other = { { 1156, 1.5 } },
+    maps = { { tex = "36-1", name = "Map", w = 512, h = 330, cw = 512, ch = 512 } },
+    spots = { { 1, 1, 20.9, 58.7 }, { 2, 1, 80, 30 }, { 0, 1, 6, 9 } },
+    quests = {
+      { id = 166, title = "The Defias Brotherhood", level = 22, min = 14, side = "Alliance", type = "Dungeon",
+        obj = "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle.",
+        start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" },
+        rewards = { 6087, 2041 },
+        chain = {
+          { id = 65, title = "The Defias Brotherhood", level = 18,
+            start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" } },
+          { id = 132, title = "The Defias Brotherhood", level = 18,
+            start = { kind = "npc", name = "Wiley the Black", map = 1433, x = 21.4, y = 45.3, zone = "Redridge Mountains" } },
+        } },
+      { id = 373, title = "The Unsent Letter", level = 22, side = "Alliance",
+        start = { kind = "item", name = "An Unsent Letter", drop = "Edwin VanCleef, Deadmines" }, rewards = {}, chain = {} },
+      { id = 2040, title = "Underground Assault", level = 20, side = "Horde",
+        start = { kind = "npc", name = "Shoni the Shilent", map = 1453, x = 55, y = 12, zone = "Orgrimmar" }, rewards = {}, chain = {} },
+    },
+  },
+  { id = 33, name = "Shadowfang Keep", kind = "dungeon", size = 5, min = 20, max = 30, zone = "Silverpine Forest",
+    bosses = { { name = "Archmage Arugal", loot = { { 6392, 10 } }, abilities = {} } }, other = {} },
+  { id = 409, name = "Molten Core", kind = "raid", size = 40, min = 60, max = 60, bosses = {}, other = {} },
+}
+"""
+ITEMS = """fake.items = { [872] = { "Rockslicer", 3, 135321 }, [5187] = { "Rhahk'Zor's Hammer", 2, 1 },
+  [5193] = { "Cape of the Brotherhood", 3, 1 }, [5191] = { "Cruel Barb", 3, 1 }, [10399] = { "Blackened Defias Armor", 3, 1 },
+  [1156] = { "Lavishly Jeweled Ring", 3, 1 }, [6392] = { "Belt of Arugal", 3, 1 }, [6087] = { "Chausses of Westfall", 2, 1 },
+  [2041] = { "Tunic of Westfall", 2, 1 } }
+fake.spellText[6304] = "Stuns an enemy for 3 sec." """
+PICKS = {"items": [[10399, 40, 9], [872, 12.4, 3.1], [6392, 5, 1.2], [2041, 7, 2]], "spec": "Fire", "level": 60,
+         "stale": False, "at": NOW - 100}
+# Jainamage is kept up to date from the character being played; Jainalt has no picks yet.
+JOURNAL_API = {**API, "characters": [{**API["characters"][0], "game": "Player-1-00ABCDEF", "upgrades": PICKS},
+                                     API["characters"][1]]}
+
+
+def journal_game(api=JOURNAL_API, before="", saved=None, **kwargs):
+    game = Game(sync_lua(api, {}) if api is not None else None, saved, journal=JOURNAL, before=ITEMS + "\n" + before, **kwargs)
+    game.slash()
+    game.click("Dungeons")
+    return game
+
+
+def click_row(game, text):
+    """Clicks the list row (a button) showing `text`."""
+    for w in game.fake.widgets.values():
+        if w.kind == "FontString" and text in w.text and w.IsVisible(w) and w.parent.kind == "Button":
+            w.parent.scripts["OnClick"](w.parent)
+            return
+    raise AssertionError(f"no row shows {text!r}")
+
+
+def view_button(game, starts):
+    return next(w for w in game.fake.widgets.values() if w.kind == "Button" and w.text.startswith(starts) and w.IsVisible(w))
+
+
+def test_the_bosses_view_lists_bosses_and_shows_their_loot_and_abilities():
+    game = journal_game()
+    text = game.texts()
+    assert "Deadmines" in text and "Level 17-26  ·  5 players  ·  Dungeon  ·  Westfall" in text
+    assert "1. Rhahk'Zor" in text and "2. Edwin VanCleef" in text and "Other drops" in text
+    assert "Rockslicer" in text and "20%" in text and "Rhahk'Zor's Hammer" in text
+    assert "Molten Core" in text and "Raid" in text
+    click_row(game, "2. Edwin VanCleef")
+    text = game.texts()
+    assert "Cruel Barb" in text and "Rockslicer" not in text
+    click_row(game, "Other drops")
+    assert "Lavishly Jeweled Ring" in game.texts() and "1.5%" in game.texts()
+    click_row(game, "1. Rhahk'Zor")
+    game.click("Abilities")
+    text = game.texts()
+    assert "Rhahk'Zor Slam" in text and "Stuns an enemy for 3 sec." in text and "Rockslicer" not in text
+    assert game.db.journal.part == "abilities"
+    game.click("Loot")
+    assert "Rockslicer" in game.texts()
+
+
+def test_upgrades_are_marked_for_the_character_you_play():
+    game = journal_game()
+    text = game.texts()
+    assert "+12 (3.1%)" in text  # Rockslicer
+    # Deadmines: two drops and a quest reward.
+    assert "3 upgrades|r here for Jainamage (Fire, level 60). Best: Blackened Defias Armor +40 (9.0%)." in text
+    marks = [w.text for w in game.fake.widgets.values() if w.kind == "FontString" and w.IsVisible(w) and w.text.startswith("|cff3fd35c+")]
+    assert "|cff3fd35c+3|r" in marks and "|cff3fd35c+1|r" in marks  # (the place list: Deadmines, Shadowfang Keep)
+    game.lua.execute("fake.worn[10399] = true")  # put it on: no longer an upgrade
+    click_row(game, "1. Rhahk'Zor")
+    assert "2 upgrades|r here for Jainamage" in game.texts()
+
+
+def test_the_map_view_shows_the_map_with_its_bosses():
+    game = journal_game()
+    game.click("Map")
+    textures = [w for w in game.fake.widgets.values() if w.kind == "Texture" and w.IsVisible(w) and w.texture == "Interface\\AddOns\\Gargoyle\\Media\\Maps\\36-1"]
+    assert len(textures) == 1 and textures[0].coords == "0,1,0,0.644531"
+    markers = [w for w in game.fake.widgets.values() if w.kind == "Button" and w.IsVisible(w) and w.boss is not None]
+    assert sorted(m.boss for m in markers) == [0, 1, 2]
+    assert sorted(m.label.text for m in markers) == ["1", "2", "E"]
+    vancleef = next(m for m in markers if m.boss == 2)
+    vancleef.scripts["OnClick"](vancleef)  # clicking a boss opens it
+    assert game.db.journal.view == "bosses" and "Cruel Barb" in game.texts()
+    click_row(game, "Shadowfang Keep")
+    view_button(game, "|cffb0b0b0Map").Click(view_button(game, "|cffb0b0b0Map"))  # (greyed: none)
+    assert "There's no map of this place yet." in game.texts()
+
+
+def test_the_quests_view_shows_how_to_get_each_quest_and_its_chain():
+    game = journal_game(before="fake.questsDone[65] = true")
+    view_button(game, "Quests (2)").Click(view_button(game, "Quests (2)"))  # (the Horde quest isn't for a Human)
+    text = game.texts()
+    assert "The Defias Brotherhood" in text and "Underground Assault" not in text
+    assert "Level 22 (from 14)  ·  Alliance  ·  Dungeon" in text
+    assert "Get it from |rGryan Stoutmantle, Westfall (56.3, 47.5)" in text
+    assert "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle." in text and "Chain (3 quests)" in text
+    lines = [w.text for w in game.fake.widgets.values() if w.kind == "FontString" and w.IsVisible(w) and ". The Defias" in w.text]
+    assert lines[0].startswith("|A:UI-LFG-ReadyMark") and "1. The Defias Brotherhood" in lines[0]  # done
+    assert "|cffffd100>|r |cffffd1002. The Defias Brotherhood|r" in lines[1] and "Wiley the Black, Redridge Mountains" in lines[1]
+    assert "(this quest)" in lines[2]
+    rewards = [w for w in game.fake.widgets.values() if w.kind == "Button" and w.IsVisible(w) and w.itemID in (6087, 2041)]
+    assert len(rewards) == 2 and [r.upgrade.shown for r in sorted(rewards, key=lambda r: r.itemID)] == [True, False]
+    click_row(game, "The Unsent Letter")
+    assert "Starts from |ran item, An Unsent Letter, which drops from Edwin VanCleef, Deadmines" in game.texts()
+    assert not game.fake.button("Show on map").enabled  # (nowhere to pin)
+
+
+def test_show_on_map_pins_the_next_step_only_when_clicked():
+    game = journal_game(before="fake.questsDone[65] = true")
+    view_button(game, "Quests").Click(view_button(game, "Quests"))
+    assert list(game.fake.pins.values()) == []  # (never on its own)
+    game.click("Show next step on map")
+    (pin,) = game.fake.pins.values()
+    assert (pin.uiMapID, round(pin.x, 3), round(pin.y, 3)) == (1433, 0.214, 0.453) and game.fake.tracking is True
+    assert "map pin set: Wiley the Black, Redridge Mountains (21.4, 45.3)." in game.printed()
+
+
+def test_the_view_part_and_character_are_kept():
+    game = journal_game()
+    game.choose_in("Jainamage", "Jainalt")
+    assert "Jainalt's upgrades haven't been worked out yet: open it in the planner on the website" in game.texts()
+    game.choose_in("Jainalt", "No one")
+    assert "Pick one of your Gargoyle characters above" in game.texts()
+    assert game.db.journal.chars["Player-1-00ABCDEF"] is False
+    saved = ("GargoyleDB = { journal = { chars = { ['Player-1-00ABCDEF'] = 12 }, place = 33, view = 'bosses',"
+             " part = 'loot' } }")
+    game = journal_game(saved=saved)
+    assert "Jainalt" in game.dropdowns() and "Shadowfang Keep" in game.texts() and "Belt of Arugal" in game.texts()
+    game = journal_game(saved="GargoyleDB = { journal = { view = 7, part = {}, place = 'x' } }")  # (odd values)
+    assert "1. Rhahk'Zor" in game.texts()
+
+
+def test_out_of_date_upgrades_say_so():
+    game = journal_game({**JOURNAL_API, "characters": [{**JOURNAL_API["characters"][0], "upgrades": {**PICKS, "stale": True}}]})
+    assert "Jainamage has changed since: open it in the planner on the website to update." in game.texts()
+
+
+def test_items_the_game_hasnt_loaded_show_when_they_arrive():
+    game = journal_game(before="fake.uncached[872] = true")
+    assert "Loading..." in game.texts() and "Rockslicer" not in game.texts()
+    game.lua.execute("fake.loadItems()")
+    game.fake.runTimers()
+    assert "Rockslicer" in game.texts() and "Loading..." not in game.texts()
+
+
+def test_the_journal_opens_on_the_dungeon_you_are_in():
+    game = journal_game(before='fake.instance = { "Shadowfang Keep", "party", 1, "Normal", 5, 0, false, 33 }')
+    assert "Belt of Arugal" in game.texts() and "(here)" in game.texts()
+    game.lua.execute('fake.instance = { "Molten Core", "raid", 9, "40 Player", 40, 0, false, 409 }')
+    game.fake.fire("PLAYER_ENTERING_WORLD")
+    assert "Its bosses aren't known yet." in game.texts() and "Belt of Arugal" not in game.texts()
+    game.lua.execute('fake.instance = { "Westfall", "none", 0, "", 5, 0, false, 0 }')
+    game.fake.fire("ZONE_CHANGED_NEW_AREA")  # (leaving keeps what's shown)
+    assert "(here)" not in game.texts() and "Its bosses aren't known yet." in game.texts()
+
+
+def test_item_tooltips_say_when_an_item_is_an_upgrade():
+    game = journal_game()
+    assert "Gargoyle: upgrade for Jainamage, +12 (3.1%)" in game.fake.itemTooltip(872)
+    assert "Gargoyle" not in game.fake.itemTooltip(5187)  # (not an upgrade)
+    game.lua.execute("fake.worn[872] = true")
+    assert "Gargoyle" not in game.fake.itemTooltip(872)
+    game.lua.execute("fake.worn[872] = false")
+    box = game.ns.optionBoxes.journal
+    box.SetChecked(box, False)
+    box.scripts.OnClick(box)
+    assert "Gargoyle" not in game.fake.itemTooltip(872) and game.fake.button("Dungeons") is None
+
+
+def test_the_journal_without_app_data_or_with_an_older_app():
+    game = journal_game(api=None)
+    assert "Upgrade marks come from your Gargoyle account" in game.texts() and "Rockslicer" in game.texts()
+    old = sync_lua(JOURNAL_API, {}).replace("sends_upgrades = true,", "")
+    assert old != sync_lua(JOURNAL_API, {})
+    game = Game(old, journal=JOURNAL, before=ITEMS)
+    game.slash()
+    game.click("Dungeons")
+    assert "Upgrade marks need the newest Gargoyle app" in game.texts()
+
+
+def test_odd_upgrade_data_is_skipped():
+    sync = """GargoyleSync = { version = 1, sends_upgrades = true, user = "Jaina", characters = {
+      { id = 11, name = "Jainamage", class = "mage", game = "Player-1-00ABCDEF",
+        upgrades = { items = { "x", { "a", 1 }, { 5187, 3 }, { 872 } }, spec = 5, level = "60" } } } }"""
+    game = Game(sync, journal=JOURNAL, before=ITEMS)
+    game.slash()
+    game.click("Dungeons")
+    text = game.texts()
+    assert "+3.0 (0.0%)" in text and "1 upgrade|r here for Jainamage." in text
+
+
+def test_the_real_journal_data_loads_and_scrolls():
+    game = Game(sync_lua(API, {}))
+    places = list(game.ns.JOURNAL.values())
+    assert len(places) > 20 and len({p.id for p in places}) == len(places)
+    for p in places:
+        for m in (p.maps or game.lua.table()).values():
+            assert (ADDON / "Media" / "Maps" / f"{m.tex}.blp").is_file() and m.w <= m.cw and m.h <= m.ch
+    game.slash()
+    game.click("Dungeons")
+    assert "Ragefire Chasm" in game.texts() and "Naxxramas" not in game.texts()
+    wheel = [w for w in game.fake.widgets.values() if w.scripts["OnMouseWheel"] and w.IsVisible(w)][0]  # (the list)
+    for _ in range(10):
+        wheel.scripts["OnMouseWheel"](wheel, -1)
+    assert "Naxxramas" in game.texts()
+    journal = game.ns.Journal
+    for i in range(1, len(places) + 1):  # (every view of every place draws)
+        journal.PickPlace(i)
+        for view in ("bosses", "map", "quests"):
+            journal.ShowView(view)

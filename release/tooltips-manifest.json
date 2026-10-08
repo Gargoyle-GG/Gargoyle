@@ -1,18 +1,18 @@
 {
  "files": {
-  "Gargoyle_Tooltips/Data/Druid.lua": "84274553ef6b5df011d4c687c1c7664e620aa3f6e4ec99071937ab833fd80f38",
-  "Gargoyle_Tooltips/Data/Hunter.lua": "7f0582217bb974674d60b91832121dd28c6f3ccafd2e0faf2335dd23c81f73c3",
-  "Gargoyle_Tooltips/Data/Mage.lua": "b52c028f628ab04428754ae5f093ace642e55ba1b3e448b728d67d2ae357485d",
-  "Gargoyle_Tooltips/Data/Paladin.lua": "a70017ca657ca17c684ac6748c1a4f01a7d428d4afedcff0009ac09f44b50ac1",
-  "Gargoyle_Tooltips/Data/Priest.lua": "c5b9bf1503119e0499db2adfbe8de1432e323ccda3b8b91dbade3262ac1fcd26",
-  "Gargoyle_Tooltips/Data/Rogue.lua": "6cb6d11d14f09ee720527892d7d00068a75aaf8b4477a6dd3879421a249ee643",
-  "Gargoyle_Tooltips/Data/Shaman.lua": "df31407b5164185f0f8256eee6563e0ed9072b5cb7fe2ffdc32ead4b190a390f",
-  "Gargoyle_Tooltips/Data/Warlock.lua": "715437e012ebb01d333e9c1e395917402e77203fa5f9cfa57c79c6d07ed3981e",
-  "Gargoyle_Tooltips/Data/Warrior.lua": "9f8342522a68ea1e66b0dcde0cbe410c8a522dd71443aba0ae6f8013fae48799",
-  "Gargoyle_Tooltips/Gargoyle_Tooltips.toc": "83fb58c4e07a34d912c76d3241fc622c51883d764c386bf6d025fbf3efdc686e",
+  "Gargoyle_Tooltips/Data/Druid.lua": "e12aff57a2ecd5bf3f7ed818bfeadbe52294ea453e2f025d238061d5e781fbb0",
+  "Gargoyle_Tooltips/Data/Hunter.lua": "0865a8550e4738cda6e68138cc0f8dc144314555a2ad13e01198faaca173b57b",
+  "Gargoyle_Tooltips/Data/Mage.lua": "e96241c90941c9dda2ce67ec9da7b42a7b39931b36f5f0e9dca16bd3a063b5e8",
+  "Gargoyle_Tooltips/Data/Paladin.lua": "82470837eba43170a9b8dc75391e4fc3f7dde8793244b1749e13b38d62159cde",
+  "Gargoyle_Tooltips/Data/Priest.lua": "bc3e9959774b5b3313e7b634d6fa6eefc569aed786fb198d3370b7a9374f928b",
+  "Gargoyle_Tooltips/Data/Rogue.lua": "5140d15d37b03d34f1ed83c55725ed968053086a6cfca49e1251a4525e00b027",
+  "Gargoyle_Tooltips/Data/Shaman.lua": "6b31807c4d7275f3118468c2e58311292bfbdde86b44d9c35194dac7d11d218e",
+  "Gargoyle_Tooltips/Data/Warlock.lua": "d062170d4cf105299a48099fdcac702f55e0700c7865a9491d7ed4e6802f562f",
+  "Gargoyle_Tooltips/Data/Warrior.lua": "529c3bd5134b8254efae3a224b7edef8de5d19a226c93de1710cd11b409e4e61",
+  "Gargoyle_Tooltips/Gargoyle_Tooltips.toc": "2afc2cd2f8290fe28696faf3d08754e696924a89b76af192a31027aac1604203",
   "Gargoyle_Tooltips/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224",
   "Gargoyle_Tooltips/Tooltips.lua": "b90578d8b37843ac9098ff4c88910ee92ce99cb924fba0bcad79343f39d0247f"
  },
- "tag": "v1.5.0-addon0.7.1-tips1.0.1",
- "version": "1.0.1"
+ "tag": "v1.6.0-addon0.8.0-tips1.0.2",
+ "version": "1.0.2"
 }

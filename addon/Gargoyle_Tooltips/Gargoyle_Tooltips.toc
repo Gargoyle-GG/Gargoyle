@@ -2,7 +2,7 @@
 ## Title: Gargoyle Damage Tooltips
 ## Notes: Adds a breakdown of your spells' damage and healing to their tooltips: base numbers, your spell power's share, your talents, crit, and the average per cast, per second and per mana. Turn it on or off in Options > AddOns > Gargoyle.
 ## Author: Gargoyle
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: GargoyleTooltipsDB
 ## OptionalDeps: Gargoyle
 ## IconTexture: Interface\AddOns\Gargoyle_Tooltips\Media\Badge

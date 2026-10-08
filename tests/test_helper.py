@@ -211,6 +211,27 @@ def test_talent_plans_in_the_data_file():
     assert first.name == HOSTILE[0][:60] and first.spells[10] == 10
 
 
+def test_upgrade_picks_in_the_data_file():
+    """Each character's upgrade picks (the dungeon journal) are copied row by row, checked and
+    capped; the data file says this app sends them."""
+    good = [[10399, 40.5, 9], [872, 12, 3.1]]
+    bad = [[True, 1, 1], [0, 1, 1], [5, -1, 1], [6, 1, 5000], [7, "x", 1], ["8", 1, 1], [9, 1], "junk", [10, float("nan"), 1]]
+    api = {"characters": [
+        {"id": 1, "name": "Picks", "class": "mage",
+         "upgrades": {"items": good + bad, "spec": HOSTILE[0] * 3, "level": 60, "stale": True, "at": 1_800_000_000}},
+        {"id": 2, "name": "Many", "class": "mage", "upgrades": {"items": [[i, 1, 1] for i in range(1, 900)], "level": 99}},
+        {"id": 3, "name": "None yet", "class": "mage"}, {"id": 4, "name": "Junk", "class": "mage", "upgrades": "x"}]}
+    table = sync_file.sync_table(api, {})
+    assert table["sends_upgrades"] is True
+    picks, many, none, junk = table["characters"]
+    assert picks["upgrades"] == {"items": good, "spec": (HOSTILE[0] * 3)[:40], "level": 60, "stale": True, "at": 1_800_000_000}
+    assert len(many["upgrades"]["items"]) == sync_file.MAX_UPGRADES and many["upgrades"]["level"] is None
+    assert "upgrades" not in none and "upgrades" not in junk
+    env = load_in_lua(sync_file.sync_lua(api, {}))
+    row = env.GargoyleSync.characters[1].upgrades["items"][1]
+    assert (row[1], row[2], row[3]) == (10399, 40.5, 9)
+
+
 def test_new_raids_are_sent_once_then_let_go(tmp_path, game_folder):
     calls = []
 
@@ -311,7 +332,7 @@ def addon_zip(files=None, version=None):
     import io
     import zipfile
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as z:
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as z:
         if files is None:
             for path in sorted((PROJECT / "addon" / "Gargoyle").rglob("*")):
                 if path.is_file():
@@ -594,6 +615,19 @@ class FakeGitHub:
             def iter_content(self, size):
                 return (data[i:i + size] for i in range(0, len(data), size))
         return Answer()
+
+
+def test_the_addon_fits_what_every_app_will_install():
+    """The addon (with its dungeon maps) stays well inside the download, unpacked size and file
+    limits, which apps already out there check too (1.5.0's are the same)."""
+    import io
+    import zipfile
+    data = addon_zip()
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        unpacked, count = sum(i.file_size for i in z.infolist()), len(z.infolist())
+    assert len(data) < 0.8 * addon_install.MAX_DOWNLOAD, len(data)
+    assert unpacked < 0.85 * addon_install.MAX_UNPACKED, unpacked
+    assert count < 0.5 * addon_install.MAX_FILES, count
 
 
 def test_the_app_installs_the_addon_from_a_github_release(tmp_path, game_folder, release_key):

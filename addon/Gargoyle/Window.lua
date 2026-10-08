@@ -36,7 +36,7 @@ end
 
 local function create()
   window = CreateFrame("Frame", "GargoyleWindow", UIParent, "PortraitFrameTemplate")
-  window:SetSize(720, 500)
+  window:SetSize(800, 540)
   window:SetPoint("CENTER")
   window:SetFrameStrata("HIGH")
   window:SetToplevel(true)
