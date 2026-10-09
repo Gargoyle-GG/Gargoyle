@@ -1,9 +1,8 @@
 -- WoW Forever's dungeons and raids for the Gargoyle window's Dungeons tab (Modules/Journal.lua).
 -- Made by tools/build_journal_data.py from the website's dungeon journal: don't change it here.
 -- Each place: its game id, name, kind, size, levels and zone; each boss: its loot as
--- { item id, drop chance in % } and its abilities as { spell id, name }; its maps
--- (Media/Maps/<tex>.blp: the used width and height of its canvas) and spots
--- ({ boss, 0 for the entrance; floor; x %; y % }); and its quests, each with who or what
+-- { item id, drop chance in % } and its abilities as { spell id, name }; and its quests,
+-- each with who or what
 -- starts it and where (the game's map id and x/y), and the quests before it, oldest first.
 local _, ns = ...
 
@@ -16,8 +15,6 @@ ns.JOURNAL = {
       { name = "Bazzalan", loot = {}, abilities = { { 14873, "Sinister Strike" } } },
     },
     other = { { 272996 }, { 272998 }, { 272999 }, { 273003 }, { 273005 }, { 273007 } },
-    maps = { { tex = "389-1", name = "Map", w = 390, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 60.3, 48.4 }, { 2, 1, 34.6, 65.6 }, { 3, 1, 20.9, 88.8 }, { 4, 1, 35.5, 90.3 }, { 0, 1, 71.2, 22.2 } },
     quests = {
       { id = 5723, title = "Testing an Enemy's Strength", level = 15, min = 9, side = "Horde", type = "Dungeon", obj = "Search Orgrimmar for Ragefire Chasm, then kill 8 Ragefire Troggs and 8 Ragefire Shaman before returning to Rahauro in Thunder Bluff.", start = { kind = "npc", name = "Rahauro", map = 1456, x = 70.1, y = 29.5, zone = "Thunder Bluff" } },
       { id = 5728, title = "Hidden Enemies", level = 16, min = 9, side = "Horde", type = "Dungeon", obj = "Kill Bazzalan and Jergosh the Invoker before returning to Thrall in Orgrimmar.", start = { kind = "npc", name = "Thrall", map = 1454, x = 31.7, y = 37.8, zone = "Orgrimmar" }, chain = { { id = 5726, title = "Hidden Enemies", level = 12, start = { kind = "npc", name = "Thrall", map = 1454, x = 31.7, y = 37.8, zone = "Orgrimmar" } }, { id = 5727, title = "Hidden Enemies", level = 12, start = { kind = "npc", name = "Thrall", map = 1454, x = 31.7, y = 37.8, zone = "Orgrimmar" } } } },
@@ -35,8 +32,6 @@ ns.JOURNAL = {
       { name = "Durgen Dirgehammer", loot = { { 270256 } }, abilities = {} },
     },
     other = { { 270230 }, { 270231 }, { 271095 }, { 270260 }, { 270261 } },
-    maps = { { tex = "3065-1", name = "Part 1", w = 372, h = 512, cw = 512, ch = 512 }, { tex = "3065-2", name = "Part 2", w = 512, h = 439, cw = 512, ch = 512 } },
-    spots = {},
     quests = {
     },
   },
@@ -51,8 +46,6 @@ ns.JOURNAL = {
       { name = "Bjork", loot = {}, abilities = {} },
     },
     other = { { 271201 }, { 271202 }, { 271203 }, { 271204 }, { 271205 }, { 271206 }, { 271207 }, { 271208 }, { 271209 }, { 271210 }, { 271211 }, { 271212 }, { 271214 }, { 271215 }, { 271217 }, { 271218 }, { 286977 }, { 286978 }, { 286980 }, { 286981 } },
-    maps = { { tex = "2999-1", name = "Part 1", w = 512, h = 512, cw = 512, ch = 512 }, { tex = "2999-2", name = "Part 2", w = 512, h = 512, cw = 512, ch = 512 } },
-    spots = {},
     quests = {
       { id = 92422, title = "The Wrath of Rath'mael", level = 22, side = "Both", obj = "Kill Rath'mael in the Ruins of Lordaeron for Deathguard Kristof in Brill.", start = { kind = "npc", name = "Deathguard Kristof", map = 1420, x = 65.2, y = 60.2, zone = "Tirisfal Glades" } },
     },
@@ -69,8 +62,6 @@ ns.JOURNAL = {
       { name = "Mutanus the Devourer", loot = { { 6463, 30.55 }, { 6461, 29.6 }, { 6627, 22.45 } }, abilities = { { 8150, "Thundercrack" }, { 7967, "Naralex's Nightmare" }, { 7399, "Terrify" } } },
     },
     other = { { 5243, 50 }, { 6632, 50 }, { 10413 } },
-    maps = { { tex = "43-1", name = "Map", w = 512, h = 334, cw = 512, ch = 512 } },
-    spots = { { 2, 1, 15.5, 58.1 }, { 3, 1, 25.4, 44.2 }, { 4, 1, 84, 28 }, { 5, 1, 91.3, 79.3 }, { 6, 1, 61.5, 52.9 }, { 7, 1, 55.5, 47 }, { 0, 1, 45.1, 59.2 } },
     quests = {
       { id = 1489, title = "Hamuul Runetotem", level = 16, min = 12, side = "Horde", obj = "Speak with Hamuul Runetotem.", start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" }, chain = { { id = 886, title = "The Barrens Oases", level = 10, start = { kind = "npc", name = "Arch Druid Hamuul Runetotem", map = 1456, x = 78.6, y = 28.6, zone = "Thunder Bluff" } }, { id = 870, title = "The Forgotten Pools", level = 13, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } }, { id = 877, title = "The Stagnant Oasis", level = 16, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } }, { id = 880, title = "Altered Beings", level = 16, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } } } },
       { id = 1490, title = "Nara Wildmane", level = 16, min = 12, side = "Horde", obj = "Speak with Nara Wildmane.", start = { kind = "npc", name = "Arch Druid Hamuul Runetotem", map = 1456, x = 78.6, y = 28.6, zone = "Thunder Bluff" }, chain = { { id = 886, title = "The Barrens Oases", level = 10, start = { kind = "npc", name = "Arch Druid Hamuul Runetotem", map = 1456, x = 78.6, y = 28.6, zone = "Thunder Bluff" } }, { id = 870, title = "The Forgotten Pools", level = 13, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } }, { id = 877, title = "The Stagnant Oasis", level = 16, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } }, { id = 880, title = "Altered Beings", level = 16, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } }, { id = 1489, title = "Hamuul Runetotem", level = 16, start = { kind = "npc", name = "Tonga Runetotem", map = 1413, x = 52.3, y = 31.9, zone = "The Barrens" } } } },
@@ -95,8 +86,6 @@ ns.JOURNAL = {
       { name = "Edwin VanCleef", loot = { { 5193, 30 }, { 5202, 30 }, { 5191, 20 }, { 10399, 20 } }, abilities = { { 674, "Dual Wield" }, { 5200, "VanCleef's Allies" } } },
     },
     other = { { 2169, 90 }, { 1937, 10 }, { 10400, 3 }, { 10402, 3 }, { 1929 }, { 1934 }, { 1936 }, { 1951 }, { 10401 }, { 273289 }, { 273293 }, { 273297 } },
-    maps = { { tex = "36-1", name = "Map", w = 512, h = 330, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 20.9, 58.7 }, { 3, 1, 34.9, 48 }, { 4, 1, 42.8, 54.9 }, { 5, 1, 88.4, 23.5 }, { 6, 1, 82, 12.1 }, { 7, 1, 91.4, 24.9 }, { 8, 1, 86, 29.9 }, { 0, 1, 8.8, 9.8 } },
     quests = {
       { id = 214, title = "Red Silk Bandanas", level = 17, min = 14, side = "Alliance", type = "Dungeon", obj = "Scout Riell at the Sentinel Hill Tower wants you to bring her 10 Red Silk Bandanas.", start = { kind = "npc", name = "Scout Riell", map = 1436, x = 56.7, y = 47.3, zone = "Westfall" }, rewards = { 2074, 2089, 6094 }, chain = { { id = 65, title = "The Defias Brotherhood", level = 18, start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" } }, { id = 132, title = "The Defias Brotherhood", level = 18, start = { kind = "npc", name = "Wiley the Black", map = 1433, x = 21.4, y = 45.3, zone = "Redridge Mountains" } }, { id = 135, title = "The Defias Brotherhood", level = 18, start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" } }, { id = 141, title = "The Defias Brotherhood", level = 18, start = { kind = "npc", name = "Master Mathias Shaw", map = 1453, x = 78.3, y = 70.7, zone = "Stormwind City" } }, { id = 142, title = "The Defias Brotherhood", level = 18, start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" } }, { id = 155, title = "The Defias Brotherhood", level = 18, start = { kind = "npc", name = "The Defias Traitor", map = 1436, x = 55.7, y = 47.5, zone = "Westfall" } } } },
       { id = 168, title = "Collecting Memories", level = 18, min = 14, side = "Alliance", obj = "Retrieve 4 Miners' Union Cards and return them to Wilder Thistlenettle in Stormwind.", start = { kind = "npc", name = "Wilder Thistlenettle", map = 1453, x = 70.3, y = 40.8, zone = "Stormwind City" }, rewards = { 2037, 2036 } },
@@ -119,8 +108,6 @@ ns.JOURNAL = {
       { name = "Archmage Arugal", loot = { { 6324, 40 }, { 6392, 40 }, { 6220, 20 }, { 6382 } }, abilities = { { 7588, "Void Bolt" }, { 7803, "Thundershock" }, { 7621, "Arugal's Curse" }, { 7586, "Shadow Port" } } },
     },
     other = { { 5943, 2.51 }, { 6341 }, { 6641, 60 }, { 6642, 40 }, { 1318 }, { 1482 }, { 1483 }, { 1484 }, { 1489 }, { 1935 }, { 1974 }, { 2205 }, { 2292 }, { 2807 }, { 3194 }, { 273643 }, { 273646 }, { 273647 } },
-    maps = { { tex = "33-1", name = "Part 1", w = 512, h = 482, cw = 512, ch = 512 }, { tex = "33-2", name = "Part 2", w = 490, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 81.6, 74.1 }, { 2, 1, 34.5, 55.7 }, { 3, 1, 20.7, 82.8 }, { 4, 1, 34, 63.1 }, { 5, 1, 73.6, 68.4 }, { 6, 1, 65.7, 30.8 }, { 7, 1, 68, 25.3 }, { 8, 2, 72.3, 13.9 }, { 0, 1, 85.7, 65.2 } },
     quests = {
       { id = 1098, title = "Deathstalkers in Shadowfang", level = 25, min = 18, side = "Horde", type = "Dungeon", obj = "Find the Deathstalker Adamant and Deathstalker Vincent.", start = { kind = "npc", name = "High Executor Hadrec", map = 1421, x = 43.4, y = 40.9, zone = "Silverpine Forest" }, rewards = { 3324 } },
       { id = 1740, title = "The Orb of Soran'ruk", level = 25, min = 20, side = "Both", classes = { "warlock" }, type = "Dungeon", obj = "Find 3 Soran'ruk Fragments and 1 Large Soran'ruk Fragment and return them to Doan Karhan in the Barrens.", start = { kind = "npc", name = "Doan Karhan", map = 1413, x = 49.3, y = 57.2, zone = "The Barrens" }, rewards = { 6898, 15109 } },
@@ -141,8 +128,6 @@ ns.JOURNAL = {
       { name = "Gelihast", loot = { { 6905, 50 }, { 6906, 50 } }, abilities = { { 6533, "Net" } } },
     },
     other = { { 1454 }, { 1481 }, { 1486 }, { 1491 }, { 2034 }, { 2271 }, { 2567 }, { 3413 }, { 3414 }, { 3415 }, { 3416 }, { 3417 }, { 273839 }, { 273840 }, { 273841 }, { 273842 }, { 273843 }, { 273846 } },
-    maps = { { tex = "48-1", name = "Map", w = 512, h = 451, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 24.2, 45.4 }, { 2, 1, 3.5, 28.8 }, { 3, 1, 41.8, 41.9 }, { 4, 1, 50.1, 46.9 }, { 5, 1, 63.4, 80.8 }, { 6, 1, 61.9, 89.2 }, { 7, 1, 92.5, 92.6 }, { 9, 1, 41.8, 41.9 }, { 0, 1, 35, 11.3 } },
     quests = {
       { id = 6564, title = "Allegiance to the Old Gods", level = 22, min = 17, side = "Horde", type = "Dungeon", obj = "Bring the Damp Note to Je'neu Sancrea in Ashenvale.", start = { kind = "item", name = "Damp Note" } },
       { id = 6563, title = "The Essence of Aku'Mai", level = 22, min = 17, side = "Horde", type = "Dungeon", obj = "Bring 20 Sapphires of Aku'Mai to Je'neu Sancrea in Ashenvale.", start = { kind = "npc", name = "Je'neu Sancrea", map = 1440, x = 11.6, y = 34.3, zone = "Ashenvale" }, chain = { { id = 6562, title = "Trouble in the Deeps", level = 22, start = { kind = "npc", name = "Tsunaman", map = 1442, x = 47.4, y = 64.2, zone = "Stonetalon Mountains" } } } },
@@ -166,8 +151,6 @@ ns.JOURNAL = {
       { name = "Bazil Thredd", loot = {}, abilities = { { 674, "Dual Wield" }, { 7964, "Smoke Bomb" }, { 9128, "Battle Shout" } } },
     },
     other = { { 2941, 33.3 }, { 2942, 33.3 }, { 3228, 33.3 }, { 1076, 1 }, { 273804 }, { 273805 }, { 273806 }, { 273807 }, { 273808 }, { 273810 }, { 273811 }, { 273817 }, { 273819 }, { 273820 }, { 273824 }, { 273825 }, { 273827 }, { 273829 }, { 274092 } },
-    maps = { { tex = "34-1", name = "Part 1", w = 512, h = 300, cw = 512, ch = 512 }, { tex = "34-2", name = "Part 2", w = 232, h = 232, cw = 256, ch = 256 } },
-    spots = { { 1, 1, 49.9, 30.1 }, { 2, 1, 70.8, 38.4 }, { 3, 1, 80.5, 56.5 }, { 4, 1, 11.7, 26.6 }, { 5, 1, 88.7, 63.1 }, { 0, 1, 50.1, 84.1 } },
     quests = {
       { id = 386, title = "What Comes Around...", level = 25, min = 22, side = "Alliance", type = "Dungeon", obj = "Bring the head of Targorr the Dread to Guard Berton in Lakeshire.", start = { kind = "npc", name = "Guard Berton", map = 1433, x = 21.2, y = 46.6, zone = "Redridge Mountains" }, rewards = { 3400, 1317 } },
       { id = 377, title = "Crime and Punishment", level = 26, min = 22, side = "Alliance", type = "Dungeon", obj = "Councilman Millstipe of Darkshire wants you to bring him the hand of Dextren Ward.", start = { kind = "npc", name = "Councilman Millstipe", map = 1431, x = 71.9, y = 47.8, zone = "Duskwood" }, rewards = { 2033, 2906 } },
@@ -185,8 +168,6 @@ ns.JOURNAL = {
       { name = "Relic Guardian", loot = { { 273028 }, { 273029 }, { 273030 } }, abilities = {} },
     },
     other = {},
-    maps = { { tex = "2998-1", name = "Map", w = 512, h = 368, cw = 512, ch = 512 } },
-    spots = {},
     quests = {
       { id = 95697, title = "Changing Tastes", level = 31, side = "Both", obj = "Enter the Excavation Sites in the Wetlands and bring back Thicket Raptor Meat.", start = { kind = "npc" } },
       { id = 98823, title = "Earthen Echo", level = 31, side = "Both", obj = "Bring the Titan Relic to Muln Earthfury at the Skywatcher Plateau in northwest Mulgore.", start = { kind = "npc", name = "Bashana Runetotem", map = 1456, x = 71, y = 33.9, zone = "Thunder Bluff" } },
@@ -205,8 +186,6 @@ ns.JOURNAL = {
       { name = "Mana Wraith", loot = {}, abilities = {} },
     },
     other = {},
-    maps = { { tex = "2959-1", name = "Part 1", w = 512, h = 503, cw = 512, ch = 512 }, { tex = "2959-2", name = "Part 2", w = 512, h = 512, cw = 512, ch = 512 } },
-    spots = {},
     quests = {
       { id = 96988, title = "Source of Power", level = 33, side = "Both", obj = "Collect 6 Cracked Sentry Cores in the City of Dalaran for Doctor Martin Felben in Undercity.", start = { kind = "npc", name = "Doctor Martin Felben", map = 1458, x = 46.6, y = 74.3, zone = "Undercity" } },
       { id = 96986, title = "The Grave Knight", level = 33, side = "Both", start = { kind = "npc" } },
@@ -222,8 +201,6 @@ ns.JOURNAL = {
       { name = "Mechanical Menagerie", loot = {}, abilities = {} },
     },
     other = { { 9455, 42.93 }, { 9456, 33.3 }, { 9457, 33.3 }, { 9485 }, { 9486 }, { 9487 }, { 9488 }, { 9489 }, { 9490 }, { 9491 }, { 9508 }, { 9509 }, { 9510 } },
-    maps = { { tex = "90-1", name = "Part 1", w = 512, h = 411, cw = 512, ch = 512 }, { tex = "90-2", name = "Part 2", w = 512, h = 436, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 77.3, 38.8 }, { 2, 2, 19.5, 35.8 }, { 3, 1, 44.3, 93.7 }, { 4, 1, 11.6, 46.6 }, { 0, 1, 82.8, 20 } },
     quests = {
       { id = 2928, title = "Gyrodrillmatic Excavationators", level = 30, min = 20, side = "Alliance", type = "Dungeon", obj = "Bring twenty-four Robo-mechanical Guts to Shoni in Stormwind.", start = { kind = "npc", name = "Shoni the Shilent", map = 1453, x = 62.6, y = 34.1, zone = "Stormwind City" }, rewards = { 9608, 9609 } },
       { id = 2951, title = "The Sparklematic 5200!", level = 30, min = 25, side = "Both", type = "Dungeon", obj = "Insert a Grime-Encrusted Item into the Sparklematic 5200, and be sure to have three silver coins to start the machine.", start = { kind = "object", name = "The Sparklematic 5200", inside = "Gnomeregan" } },
@@ -243,8 +220,6 @@ ns.JOURNAL = {
       { name = "Charlga Razorflank", loot = { { 6693, 40 }, { 6694, 40 }, { 6692, 20 } }, abilities = { { 8361, "Purity" }, { 6077, "Renew" }, { 8292, "Chain Bolt" } } },
     },
     other = { { 6679, 59.58 }, { 6688, 50 }, { 6689, 50 }, { 6695, 33.3 }, { 6696, 33.3 }, { 6697, 33.3 }, { 776 }, { 1488 }, { 1727 }, { 1975 }, { 1976 }, { 1978 }, { 2039 }, { 2264 }, { 2549 }, { 4438 }, { 274158 }, { 274159 }, { 274160 }, { 274161 } },
-    maps = { { tex = "47-1", name = "Part 1", w = 512, h = 263, cw = 512, ch = 512 }, { tex = "47-2", name = "Part 2", w = 512, h = 288, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 67.4, 37.1 }, { 2, 1, 83, 52.7 }, { 3, 1, 89.9, 36.2 }, { 4, 1, 59.6, 21.6 }, { 5, 1, 15.1, 75.3 }, { 6, 1, 30, 24.9 }, { 0, 1, 72.3, 88.8 } },
     quests = {
       { id = 1142, title = "Mortality Wanes", level = 30, min = 25, side = "Alliance", type = "Dungeon", obj = "Find and return Treshala's Pendant to Treshala Fallowbrook in Darnassus.", start = { kind = "npc", name = "Heralath Fallowbrook", inside = "Razorfen Kraul" }, rewards = { 6751, 6752 } },
       { id = 1109, title = "Going, Going, Guano!", level = 33, min = 30, side = "Horde", type = "Dungeon", obj = "Bring 1 pile of Kraul Guano to Master Apothecary Faranell in the Undercity.", start = { kind = "npc", name = "Master Apothecary Faranell", map = 1458, x = 49.1, y = 69.7, zone = "Undercity" } },
@@ -263,8 +238,6 @@ ns.JOURNAL = {
       { name = "High Inquisitor Whitemane", loot = {}, abilities = { { 12039, "Heal" }, { 9481, "Holy Smite" }, { 22187, "Power Word: Shield" }, { 9256, "Deep Sleep" }, { 14515, "Dominate Mind" }, { 9232, "Scarlet Resurrection" } } },
     },
     other = { { 7731, 33.93 }, { 7708, 32.21 }, { 7709, 30.61 }, { 7691, 39.02 }, { 7690, 38.9 }, { 7689, 17.73 }, { 252513 }, { 7686, 41.99 }, { 7688, 32.89 }, { 7687, 21.2 }, { 10330, 14.55 }, { 23169 }, { 7726, 40 }, { 2262 }, { 5756 }, { 5819 }, { 7727 }, { 7728 }, { 7729 }, { 7730 }, { 7752 }, { 7753 }, { 7754 }, { 7759 }, { 7761 }, { 7786 }, { 7787 }, { 8225 }, { 8226 }, { 10328 }, { 10329 }, { 10331 }, { 10332 }, { 10333 }, { 274290 }, { 274291 } },
-    maps = { { tex = "189-1", name = "Part 1", w = 512, h = 256, cw = 512, ch = 256 }, { tex = "189-2", name = "Part 2", w = 512, h = 315, cw = 512, ch = 512 }, { tex = "189-3", name = "Part 3", w = 248, h = 512, cw = 256, ch = 512 }, { tex = "189-4", name = "Part 4", w = 364, h = 401, cw = 512, ch = 512 }, { tex = "189-5", name = "Part 5", w = 419, h = 339, cw = 512, ch = 512 }, { tex = "189-6", name = "Part 6", w = 512, h = 408, cw = 512, ch = 512 }, { tex = "189-7", name = "Part 7", w = 319, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 66.7, 24.6 }, { 2, 1, 9.9, 11.4 }, { 3, 2, 41.5, 85.6 }, { 4, 2, 87.1, 73.1 }, { 5, 3, 79.7, 9.8 }, { 6, 4, 74.6, 44.4 }, { 7, 4, 50, 22.8 }, { 0, 1, 81.2, 63.2 } },
     quests = {
       { id = 1113, title = "Hearts of Zeal", level = 33, min = 30, side = "Horde", obj = "Master Apothecary Faranell in the Undercity wants 20 Hearts of Zeal.", start = { kind = "npc", name = "Master Apothecary Faranell", map = 1458, x = 48.8, y = 69.3, zone = "Undercity" }, chain = { { id = 1109, title = "Going, Going, Guano!", level = 33, start = { kind = "npc", name = "Master Apothecary Faranell", map = 1458, x = 49.1, y = 69.7, zone = "Undercity" } } } },
       { id = 1051, title = "Vorrel's Revenge", level = 33, min = 25, side = "Horde", type = "Elite", obj = "Return Vorrel Sengutz's wedding ring to Monika Sengutz in Tarren Mill.", start = { kind = "npc", name = "Vorrel Sengutz", inside = "Scarlet Monastery" }, rewards = { 7751, 7750, 4643 } },
@@ -285,8 +258,6 @@ ns.JOURNAL = {
       { name = "Amnennar the Coldbringer", loot = {}, abilities = { { 12642, "Summon Frost Spectres" }, { 15531, "Frost Nova" }, { 13009, "Amnennar's Wrath" }, { 15530, "Frostbolt" } } },
     },
     other = { { 10571 }, { 10584 } },
-    maps = { { tex = "129-1", name = "Part 1", w = 512, h = 372, cw = 512, ch = 512 }, { tex = "129-2", name = "Part 2", w = 512, h = 395, cw = 512, ch = 512 } },
-    spots = { { 3, 1, 85.1, 44 }, { 4, 1, 46.2, 67.4 }, { 5, 1, 29.2, 43.5 }, { 6, 1, 36.8, 58.5 }, { 0, 1, 11.8, 14.8 } },
     quests = {
       { id = 6626, title = "A Host of Evil", level = 35, min = 28, side = "Both", type = "Dungeon", obj = "Kill 8 Razorfen Battleguard, 8 Razorfen Thornweavers, and 8 Death's Head Cultists and return to Myriam Moonsinger near the entrance to Razorfen Downs.", start = { kind = "npc", name = "Myriam Moonsinger", map = 1413, x = 49, y = 94.9, zone = "The Barrens" } },
       { id = 6521, title = "An Unholy Alliance", level = 36, min = 28, side = "Horde", type = "Dungeon", obj = "Bring Ambassador Malcin's Head to Varimathras in the Undercity.", start = { kind = "npc", name = "Varimathras", map = 1458, x = 56.3, y = 92.2, zone = "Undercity" }, rewards = { 17039, 17042, 17043 }, chain = { { id = 6522, title = "An Unholy Alliance", level = 36, start = { kind = "item", name = "Small Scroll", drop = "Charlga Razorflank, Razorfen Kraul" } } } },
@@ -309,8 +280,6 @@ ns.JOURNAL = {
       { name = "Archaedas", loot = {}, abilities = { { 10347, "Archaedas Awaken Visual (DND)" }, { 10259, "Awaken Earthen Dwarf" }, { 6524, "Ground Tremor" }, { 16245, "Freeze Anim" }, { 10252, "Awaken Earthen Guardians" }, { 10258, "Awaken Vault Warder" } } },
     },
     other = { { 9384 } },
-    maps = { { tex = "70-1", name = "Map", w = 495, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 56.4, 71.8 }, { 2, 1, 63.9, 92.9 }, { 4, 1, 17.5, 61.6 }, { 5, 1, 46.1, 40.9 }, { 6, 1, 12.9, 36.2 }, { 7, 1, 6, 25.1 }, { 8, 1, 37.3, 17.2 }, { 0, 1, 76.1, 72.4 } },
     quests = {
       { id = 1956, title = "Power in Uldaman", level = 40, min = 35, side = "Both", classes = { "mage" }, type = "Dungeon", obj = "Retrieve an Obsidian Power Source and bring it to Tabetha in Dustwallow Marsh.", start = { kind = "npc", name = "Tabetha", map = 1445, x = 46.1, y = 57.1, zone = "Dustwallow Marsh" }, chain = { { id = 1953, title = "Return to the Marsh", level = 40, start = { kind = "npc", name = "Anastasia Hartwell", map = 1458, x = 85.1, y = 10, zone = "Undercity" } }, { id = 1954, title = "The Infernal Orb", level = 40, start = { kind = "npc", name = "Tabetha", map = 1445, x = 46.1, y = 57.1, zone = "Dustwallow Marsh" } }, { id = 1955, title = "The Exorcism", level = 40, start = { kind = "npc", name = "Tabetha", map = 1445, x = 46.1, y = 57.1, zone = "Dustwallow Marsh" } } } },
       { id = 2201, title = "Find the Gems", level = 43, min = 40, side = "Alliance", type = "Dungeon", obj = "Find the ruby, sapphire, and topaz that are scattered throughout Uldaman. Once acquired, contact Talvash del Kissel remotely by using the Phial of Scrying he previously gave you. From the journal, you know... * The ruby has been stashed in a barricaded Shadowforge area. * The topaz has been hidden in an urn in one of the Trogg areas, near some Alliance dwarves. * The sapphire has been claimed by Grimlok, the trogg leader.", start = { kind = "npc", name = "Remains of a Paladin", inside = "Uldaman" }, chain = { { id = 2198, title = "The Shattered Necklace", level = 41, start = { kind = "item", name = "Shattered Necklace" } }, { id = 2199, title = "Lore for a Price", level = 41, start = { kind = "npc", name = "Talvash del Kissel", map = 1455, x = 36.4, y = 3.6, zone = "Ironforge" } }, { id = 2200, title = "Back to Uldaman", level = 42, start = { kind = "npc", name = "Talvash del Kissel", map = 1455, x = 36.4, y = 3.6, zone = "Ironforge" } } } },
@@ -330,8 +299,6 @@ ns.JOURNAL = {
       { name = "Chief Ukorz Sandscalp", loot = {}, abilities = { { 11904, "Summon Sandfury Slave" }, { 8269, "Enrage" }, { 7366, "Berserker Stance" }, { 11837, "Wide Slash" }, { 15496, "Cleave" } } },
     },
     other = {},
-    maps = { { tex = "209-1", name = "Map", w = 465, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 13.1, 34.2 }, { 3, 1, 94.8, 16.1 }, { 4, 1, 67, 21.1 }, { 5, 1, 43.9, 3.2 }, { 8, 1, 43.6, 28 }, { 0, 1, 69.5, 96.8 } },
     quests = {
       { id = 2865, title = "Scarab Shells", level = 45, min = 40, side = "Both", type = "Dungeon", obj = "Bring 5 Uncracked Scarab Shells to Tran'rek in Gadgetzan.", start = { kind = "npc", name = "Tran'rek", map = 1446, x = 51.6, y = 26.8, zone = "Tanaris" }, chain = { { id = 2864, title = "Tran'rek", level = 45, start = { kind = "npc", name = "Krazek", map = 1434, x = 26.9, y = 77.2, zone = "Stranglethorn Vale" } } } },
       { id = 3042, title = "Troll Temper", level = 45, min = 40, side = "Both", type = "Dungeon", obj = "Bring 20 Vials of Troll Temper to Trenton Lighthammer in Gadgetzan.", start = { kind = "npc", name = "Trenton Lighthammer", map = 1446, x = 51.4, y = 28.8, zone = "Tanaris" } },
@@ -351,8 +318,6 @@ ns.JOURNAL = {
       { name = "Princess Theradras", loot = {}, abilities = { { 21909, "Dust Field" }, { 21832, "Boulder" }, { 21869, "Repulsive Gaze" } } },
     },
     other = {},
-    maps = { { tex = "349-1", name = "Part 1", w = 428, h = 512, cw = 512, ch = 512 }, { tex = "349-2", name = "Part 2", w = 402, h = 512, cw = 512, ch = 512 }, { tex = "349-3", name = "Part 3", w = 498, h = 499, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 44.1, 4.5 }, { 2, 1, 28.4, 15.5 }, { 3, 1, 54.8, 76.7 }, { 4, 1, 46.6, 32.2 }, { 5, 1, 20.8, 33.9 }, { 6, 2, 46.9, 12.3 }, { 7, 1, 33.3, 83.5 }, { 8, 1, 20.3, 84.5 }, { 0, 1, 67.3, 12.8 } },
     quests = {
       { id = 771, title = "Rite of Vision", level = 7, min = 3, side = "Horde", obj = "Collect 2 Well Stones and 2 Ambercorn and bring them back to Zarlman Two-Moons in Bloodhoof Village.", start = { kind = "npc", name = "Zarlman Two-Moons", map = 1412, x = 46.9, y = 61.2, zone = "Mulgore" }, chain = { { id = 752, title = "A Humble Task", level = 2, start = { kind = "npc", name = "Chief Hawkwind", map = 1412, x = 43.9, y = 76.7, zone = "Mulgore" } }, { id = 753, title = "A Humble Task", level = 3, start = { kind = "npc", name = "Greatmother Hawkwind", map = 1412, x = 48.8, y = 80.9, zone = "Mulgore" } }, { id = 755, title = "Rites of the Earthmother", level = 3, start = { kind = "npc", name = "Chief Hawkwind", map = 1412, x = 43.9, y = 76.7, zone = "Mulgore" } }, { id = 757, title = "Rite of Strength", level = 4, start = { kind = "npc", name = "Seer Graytongue", map = 1412, x = 42.5, y = 90.1, zone = "Mulgore" } }, { id = 763, title = "Rites of the Earthmother", level = 5, start = { kind = "npc", name = "Chief Hawkwind", map = 1412, x = 43.9, y = 76.7, zone = "Mulgore" } }, { id = 767, title = "Rite of Vision", level = 6, start = { kind = "npc", name = "Baine Bloodhoof", map = 1412, x = 46.7, y = 63.4, zone = "Mulgore" } } } },
       { id = 7068, title = "Shadowshard Fragments", level = 42, min = 38, side = "Horde", type = "Dungeon", obj = "Collect 10 Shadowshard Fragments from Maraudon and return them to Uthel'nay in Orgrimmar.", start = { kind = "npc", name = "Uthel'nay", map = 1454, x = 39.2, y = 86.3, zone = "Orgrimmar" } },
@@ -385,8 +350,6 @@ ns.JOURNAL = {
       { name = "Morphaz and Hazzas", loot = {}, abilities = { { 12884, "Acid Breath" }, { 12882, "Wing Flap" } } },
     },
     other = { { 272393 }, { 272394 }, { 272395 }, { 272396 }, { 272397 }, { 272398 }, { 272399 }, { 272401 }, { 272403 }, { 272404 }, { 272405 }, { 272410 } },
-    maps = { { tex = "109-1", name = "Part 1", w = 386, h = 512, cw = 512, ch = 512 }, { tex = "109-2", name = "Part 2", w = 512, h = 485, cw = 512, ch = 512 }, { tex = "109-3", name = "Part 3", w = 409, h = 512, cw = 512, ch = 512 } },
-    spots = { { 3, 2, 75.6, 84.9 }, { 4, 2, 42.8, 82.7 }, { 5, 2, 44.7, 82.1 }, { 8, 2, 85.8, 36.1 }, { 13, 2, 44.7, 82.1 }, { 0, 1, 48.2, 18 } },
     quests = {
       { id = 1475, title = "Into The Temple of Atal'Hakkar", level = 50, min = 41, side = "Alliance", type = "Dungeon", obj = "Gather 10 Atal'ai Tablets for Brohann Caskbelly in Stormwind.", start = { kind = "npc", name = "Brohann Caskbelly", map = 1453, x = 69.5, y = 40.4, zone = "Stormwind City" }, chain = { { id = 1448, title = "In Search of The Temple", level = 43, start = { kind = "npc", name = "Brohann Caskbelly", map = 1453, x = 69.5, y = 40.4, zone = "Stormwind City" } }, { id = 1449, title = "To The Hinterlands", level = 43, start = { kind = "npc", name = "Brohann Caskbelly", map = 1453, x = 69.5, y = 40.4, zone = "Stormwind City" } }, { id = 1450, title = "Gryphon Master Talonaxe", level = 43, start = { kind = "npc", name = "Falstad Wildhammer", map = 1425, x = 11.8, y = 46.8, zone = "The Hinterlands" } }, { id = 1451, title = "Rhapsody Shindigger", level = 43, start = { kind = "npc", name = "Gryphon Master Talonaxe", map = 1425, x = 9.8, y = 44.5, zone = "The Hinterlands" } }, { id = 1452, title = "Rhapsody's Kalimdor Kocktail", level = 43, start = { kind = "npc", name = "Rhapsody Shindigger", map = 1425, x = 26.9, y = 48.6, zone = "The Hinterlands" } }, { id = 1469, title = "Rhapsody's Tale", level = 43, start = { kind = "npc", name = "Rhapsody Shindigger", map = 1425, x = 26.9, y = 48.6, zone = "The Hinterlands" } } } },
       { id = 1445, title = "The Temple of Atal'Hakkar", level = 50, min = 38, side = "Horde", type = "Dungeon", obj = "Collect 20 Fetishes of Hakkar and bring them to Fel'Zerul in Stonard.", start = { kind = "npc", name = "Fel'zerul", map = 1435, x = 47.9, y = 54.8, zone = "Swamp of Sorrows" }, chain = { { id = 1424, title = "Pool of Tears", level = 43, start = { kind = "npc", name = "Fel'zerul", map = 1435, x = 47.9, y = 54.8, zone = "Swamp of Sorrows" } }, { id = 1429, title = "The Atal'ai Exile", level = 44, start = { kind = "npc", name = "Fel'zerul", map = 1435, x = 47.9, y = 54.8, zone = "Swamp of Sorrows" } }, { id = 1444, title = "Return to Fel'Zerul", level = 44, start = { kind = "npc", name = "Atal'ai Exile", map = 1425, x = 33.8, y = 75.2, zone = "The Hinterlands" } } } },
@@ -426,8 +389,6 @@ ns.JOURNAL = {
       { name = "Emperor Dagran Thaurissan", loot = { { 21524, 100 } }, abilities = { { 17492, "Hand of Thaurissan" }, { 15636, "Avatar of Flame" } } },
     },
     other = { { 11945 }, { 11946 } },
-    maps = { { tex = "230-1", name = "Part 1", w = 466, h = 512, cw = 512, ch = 512 }, { tex = "230-2", name = "Part 2", w = 294, h = 512, cw = 512, ch = 512 }, { tex = "230-3", name = "Part 3", w = 303, h = 512, cw = 512, ch = 512 }, { tex = "230-4", name = "Part 4", w = 512, h = 483, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 37.5, 94 }, { 2, 1, 39.8, 67.1 }, { 3, 1, 40, 70.8 }, { 5, 2, 56.9, 91.8 }, { 6, 1, 47.9, 48.4 }, { 7, 1, 54.4, 53.9 }, { 8, 1, 54.3, 43.1 }, { 9, 1, 9, 63.3 }, { 10, 1, 23.1, 67.3 }, { 11, 1, 23.5, 52 }, { 13, 1, 44.7, 51.9 }, { 14, 1, 39.4, 49.5 }, { 15, 1, 40.2, 48.8 }, { 17, 3, 40.4, 31.6 }, { 18, 1, 43.9, 23.2 }, { 19, 1, 81.7, 10.2 }, { 20, 1, 96.5, 9.9 }, { 21, 1, 96.6, 10.2 }, { 0, 1, 22, 82.6 } },
     quests = {
       { id = 3802, title = "Dark Iron Legacy", level = 52, min = 48, side = "Both", type = "Dungeon", obj = "Slay Fineous Darkvire and recover the great hammer, Ironfel. Take Ironfel to the Shrine of Thaurissan and place it on the statue of Franclorn Forgewright.", start = { kind = "npc", name = "Franclorn Forgewright", map = 1428, x = 29, y = 28.9, zone = "Burning Steppes" }, rewards = { 11000 }, chain = { { id = 3801, title = "Dark Iron Legacy", level = 52, start = { kind = "npc", name = "Franclorn Forgewright", map = 1428, x = 29, y = 28.9, zone = "Burning Steppes" } } } },
       { id = 4081, title = "KILL ON SIGHT: Dark Iron Dwarves", level = 52, min = 48, side = "Horde", type = "Dungeon", obj = "Venture to Blackrock Depths and destroy the vile aggressors! Warlord Goretooth wants you to kill 15 Anvilrage Guardsmen, 10 Anvilrage Wardens and 5 Anvilrage Footmen. Return to him once your task is complete.", start = { kind = "object", name = "WANTED", map = 1418, x = 3.7, y = 47.4, zone = "Badlands" } },
@@ -469,8 +430,6 @@ ns.JOURNAL = {
       { name = "Tsu'zee", loot = {}, abilities = { { 15581, "Sinister Strike" }, { 21060, "Blind" } } },
     },
     other = { { 16309 } },
-    maps = { { tex = "429-1", name = "Part 1", w = 512, h = 367, cw = 512, ch = 512 }, { tex = "429-2", name = "Part 2", w = 512, h = 292, cw = 512, ch = 512 }, { tex = "429-3", name = "Part 3", w = 423, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 76.5, 72.3 }, { 2, 1, 76, 69.5 }, { 3, 2, 76.8, 68.4 }, { 4, 1, 63.4, 63.5 }, { 5, 2, 75.8, 32.6 }, { 6, 3, 49.6, 49.8 }, { 7, 2, 5, 78.4 }, { 8, 2, 2.7, 63.4 }, { 9, 1, 10.2, 72.6 }, { 10, 1, 20.1, 60.1 }, { 11, 2, 44.8, 15.3 }, { 12, 2, 37.5, 5 }, { 13, 2, 25.8, 22.1 }, { 14, 1, 24.9, 29.4 }, { 15, 1, 27.6, 23.8 }, { 16, 1, 27.2, 8.6 }, { 17, 1, 27.6, 8.9 }, { 19, 1, 23.4, 60.4 }, { 0, 1, 61, 66.3 } },
     quests = {
       { id = 7492, title = "Camp Mojache", level = 57, min = 54, side = "Horde", type = "Dungeon", obj = "Speak with Talo Thornhoof at Camp Mojache in Feralas.", start = { kind = "npc", name = "Warcaller Gorlach", map = 1454, x = 48.2, y = 66.1, zone = "Orgrimmar" } },
       { id = 7494, title = "Feathermoon Stronghold", level = 57, min = 54, side = "Alliance", type = "Dungeon", obj = "Speak with Latronicus Moonspear at the Feathermoon Stronghold in Feralas.", start = { kind = "npc", name = "Crier Goodman", map = 1453, x = 56.4, y = 74.1, zone = "Stormwind City" } },
@@ -528,8 +487,6 @@ ns.JOURNAL = {
       { name = "Lord Valthalak", loot = {}, abilities = { { 8269, "Enrage" }, { 27249, "Summon Spectral Assassin" }, { 27382, "Shadow Bolt Volley" }, { 27286, "Shadow Wrath" } } },
     },
     other = { { 16669, 19.66 }, { 16695, 17.8 }, { 16717, 4.5 }, { 16710, 1.2 }, { 16716, 1.1 }, { 16673 }, { 16680 }, { 16683 }, { 16685 }, { 16696 }, { 16703 }, { 16713 }, { 16735 }, { 16736 } },
-    maps = { { tex = "229-1", name = "Part 1", w = 512, h = 410, cw = 512, ch = 512 }, { tex = "229-2", name = "Part 2", w = 512, h = 481, cw = 512, ch = 512 }, { tex = "229-3", name = "Part 3", w = 512, h = 448, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 59.2, 62.6 }, { 2, 2, 69.4, 88 }, { 3, 1, 80, 60.5 }, { 4, 1, 94.1, 81.1 }, { 6, 1, 82.3, 90.2 }, { 7, 1, 64.2, 90.7 }, { 9, 3, 78, 52.7 }, { 10, 1, 53.6, 35.1 }, { 12, 1, 92.6, 44.5 }, { 13, 3, 21.9, 33.8 }, { 0, 1, 49.5, 46 } },
     quests = {
       { id = 4701, title = "Put Her Down", level = 59, min = 55, side = "Alliance", type = "Dungeon", obj = "Travel to Blackrock Spire and destroy the source of the worg menace. As you left Helendis, he shouted a name: Halycon. It is what the orcs refer to in regards to the worg.", start = { kind = "npc", name = "Helendis Riverhorn", map = 1428, x = 85.8, y = 68.9, zone = "Burning Steppes" } },
       { id = 4724, title = "The Pack Mistress", level = 59, min = 55, side = "Horde", type = "Dungeon", obj = "Slay Halycon, pack mistress of the Bloodaxe worg.", start = { kind = "npc", name = "Galamav the Marksman", map = 1418, x = 6, y = 47.7, zone = "Badlands" } },
@@ -564,8 +521,6 @@ ns.JOURNAL = {
       { name = "Darkmaster Gandling", loot = { { 16686, 13.84 }, { 16677, 13.23 }, { 16731, 12.32 }, { 16720, 11.25 }, { 16698, 11.03 }, { 16693, 10.8 }, { 16707, 10.42 }, { 16727, 6.62 }, { 16667, 4.33 } }, abilities = { { 15790, "Arcane Missiles" }, { 12040, "Shadow Shield" }, { 18702, "Curse of the Darkmaster" }, { 17950, "Shadow Portal" } } },
     },
     other = { { 18760, 25.91 }, { 16689, 16.7 }, { 16671 }, { 16702 }, { 16710 }, { 16714 }, { 16716 }, { 16722 } },
-    maps = { { tex = "289-1", name = "Part 1", w = 451, h = 512, cw = 512, ch = 512 }, { tex = "289-2", name = "Part 2", w = 480, h = 512, cw = 512, ch = 512 } },
-    spots = { { 2, 1, 44.6, 11.1 }, { 3, 1, 16.5, 44.3 }, { 4, 1, 32.4, 40.9 }, { 5, 1, 37.3, 42.7 }, { 7, 1, 25.2, 85.3 }, { 8, 1, 66.3, 57 }, { 9, 1, 93.1, 32.9 }, { 10, 1, 65.4, 9.4 }, { 11, 1, 66.2, 52.8 }, { 12, 1, 91.9, 33.8 }, { 13, 1, 65.5, 11.7 }, { 0, 1, 29.5, 30.7 } },
     quests = {
       { id = 5529, title = "Plagued Hatchlings", level = 58, min = 55, side = "Both", type = "Dungeon", obj = "Kill 20 Plagued Hatchlings, then return to Betina Bigglezink at the Light's Hope Chapel.", start = { kind = "npc", name = "Betina Bigglezink", map = 1423, x = 71.7, y = 49.9, zone = "Eastern Plaguelands" } },
       { id = 5341, title = "Barov Family Fortune", level = 60, min = 52, side = "Horde", type = "Dungeon", obj = "Venture to the Scholomance and recover the Barov family fortune. Four deeds make up this fortune: The Deed to Caer Darrow; The Deed to Brill; The Deed to Tarren Mill; and The Deed to Southshore. Return to Alexi Barov when you have completed this task.", start = { kind = "npc", name = "Alexi Barov", map = 1420, x = 83.1, y = 71.6, zone = "Tirisfal Glades" } },
@@ -604,8 +559,6 @@ ns.JOURNAL = {
       { name = "Stonespine", loot = {}, abilities = { { 14331, "Vicious Rend" } } },
     },
     other = { { 23125, 33.3 }, { 16710, 1.4 }, { 16681 }, { 16697 }, { 16723 }, { 272838 }, { 272839 }, { 272840 }, { 272841 }, { 272842 }, { 272843 }, { 272844 }, { 272845 }, { 272847 }, { 272848 }, { 272849 }, { 272850 }, { 272851 }, { 272856 }, { 272857 }, { 272858 }, { 272859 } },
-    maps = { { tex = "329-1", name = "Part 1", w = 512, h = 460, cw = 512, ch = 512 }, { tex = "329-2", name = "Part 2", w = 512, h = 419, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 70.6, 70.3 }, { 3, 1, 25.9, 67.1 }, { 4, 1, 3.9, 73.2 }, { 5, 1, 23.2, 88.5 }, { 7, 1, 60.9, 54.4 }, { 8, 2, 90.5, 39 }, { 9, 2, 69.4, 39.1 }, { 10, 2, 82.8, 14.2 }, { 11, 2, 79.6, 65.5 }, { 13, 1, 50.4, 13.3 }, { 18, 1, 67.9, 69.3 }, { 19, 2, 79.2, 40.9 }, { 0, 1, 86.2, 71 } },
     quests = {
       { id = 5263, title = "Above and Beyond", level = 60, min = 55, side = "Both", type = "Dungeon", obj = "Venture to Stratholme and destroy Baron Rivendare. Take his head and return to Duke Nicholas Zverenhoff.", start = { kind = "npc", name = "Duke Nicholas Zverenhoff", map = 1423, x = 71.6, y = 50.1, zone = "Eastern Plaguelands" }, chain = { { id = 5251, title = "The Archivist", level = 60, start = { kind = "npc", name = "Duke Nicholas Zverenhoff", map = 1423, x = 71.6, y = 50.1, zone = "Eastern Plaguelands" } }, { id = 5262, title = "The Truth Comes Crashing Down", level = 60, start = { kind = "item", name = "Head of Balnazzar" } } } },
       { id = 5125, title = "Aurius' Reckoning", level = 60, min = 55, side = "Both", type = "Dungeon", start = { kind = "npc", name = "Aurius", inside = "Stratholme" } },
@@ -629,8 +582,6 @@ ns.JOURNAL = {
     bosses = {
     },
     other = {},
-    maps = {},
-    spots = {},
     quests = {
     },
   },
@@ -649,8 +600,6 @@ ns.JOURNAL = {
       { name = "The Molten Core", loot = {}, abilities = {} },
     },
     other = {},
-    maps = { { tex = "409-1", name = "Map", w = 512, h = 442, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 68.6, 40 }, { 2, 1, 74.9, 23.8 }, { 3, 1, 28.9, 51.5 }, { 4, 1, 24.3, 76 }, { 5, 1, 53.5, 86.8 }, { 6, 1, 71.2, 68.4 }, { 7, 1, 90.3, 84.8 }, { 8, 1, 72.8, 63.3 }, { 0, 1, 21.3, 29.8 } },
     quests = {
       { id = 7848, title = "Attunement to the Core", level = 60, min = 55, side = "Both", type = "Dungeon", obj = "Venture to the Molten Core entry portal in Blackrock Depths and recover a Core Fragment. Return to Lothos Riftwaker in Blackrock Mountain when you have recovered the Core Fragment.", start = { kind = "npc", name = "Lothos Riftwaker", map = 1428, x = 26.4, y = 24.5, zone = "Burning Steppes" } },
       { id = 6824, title = "Hands of the Enemy", level = 60, min = 60, side = "Both", type = "Raid", obj = "Bring the Hands of Lucifron, Sulfuron, Gehennas and Shazzrah to Duke Hydraxis in Azshara.", start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" }, chain = { { id = 6804, title = "Poisoned Water", level = 56, start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" } }, { id = 6821, title = "Eye of the Emberseer", level = 60, start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" } }, { id = 6822, title = "The Molten Core", level = 60, start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" } }, { id = 6823, title = "Agent of Hydraxis", level = 60, start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" } } } },
@@ -663,8 +612,6 @@ ns.JOURNAL = {
       { name = "Onyxia", loot = { { 2564, 1.3 }, { 4696, 1.3 }, { 5267, 1.3 }, { 6622, 1.3 }, { 9402, 1.3 }, { 13000, 1.3 }, { 13002, 1.3 }, { 13004, 1.3 }, { 13006, 1.3 }, { 13007, 1.3 }, { 13015, 1.3 }, { 13036, 1.3 }, { 13046, 1.3 }, { 13047, 1.3 }, { 13053, 1.3 }, { 13060, 1.3 }, { 13065, 1.3 }, { 13070, 1.3 }, { 13072, 1.3 }, { 13075, 1.3 }, { 13077, 1.3 }, { 13083, 1.3 }, { 13091, 1.3 }, { 13096, 1.3 }, { 13107, 1.3 }, { 13113, 1.3 }, { 13116, 1.3 }, { 13118, 1.3 }, { 13123, 1.3 }, { 13125, 1.3 }, { 13133, 1.3 }, { 13135, 1.3 }, { 13139, 1.3 }, { 13146, 1.3 } }, abilities = { { 21131, "Breath" }, { 18431, "Spell 18431" }, { 18435, "Flame Breath" }, { 19983, "Cleave" }, { 15847, "Tail Sweep" }, { 18500, "Wing Buffet" }, { 19633, "Knock Away" }, { 18392, "Fireball" }, { 22191, "Heated Ground" }, { 19951, "Pacify Self" }, { 18430, "Dragon Hover" }, { 20171, "Summon Onyxian Whelps" } } },
     },
     other = {},
-    maps = { { tex = "249-1", name = "Map", w = 499, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 71.1, 27.9 }, { 0, 1, 20.3, 17.1 } },
     quests = {
       { id = 7635, title = "A Proper String", level = 60, min = 60, side = "Both", classes = { "hunter" }, type = "Raid", obj = "Stoma the Ancient has asked that you bring him a Mature Black Dragon Sinew. Should you find this sinew, return it to Stoma in Felwood.", start = { kind = "npc", name = "Stoma the Ancient" }, rewards = { 18724 }, chain = { { id = 7632, title = "The Ancient Leaf", level = 60, start = { kind = "item", name = "Ancient Petrified Leaf" } } } },
       { id = 7495, title = "Victory for the Alliance", level = 60, min = 50, side = "Alliance", obj = "Take the Head of Onyxia to Highlord Bolvar Fordragon in Stormwind.", start = { kind = "item", name = "Head of Onyxia", drop = "Onyxia, Onyxia's Lair" } },
@@ -683,8 +630,6 @@ ns.JOURNAL = {
       { name = "Nefarian", loot = {}, abilities = { { 23362, "Raise Drakonids" }, { 22539, "Shadow Flame" }, { 22686, "Bellowing Roar" }, { 22687, "Veil of Shadow" }, { 19983, "Cleave" }, { 23364, "Tail Lash" }, { 25184, "Speed Burst" }, { 19818, "Double Attack" }, { 23397, "Berserk" }, { 23418, "Siphon Blessing" }, { 23436, "Corrupt Weapon" }, { 23414, "Paralyze" }, { 23401, "Corrupted Healing" }, { 23425, "Corrupted Totems" }, { 23410, "Wild Magic" }, { 23427, "Summon Infernals" }, { 23398, "Involuntary Transformation" } } },
     },
     other = { { 19434, 2.6 } },
-    maps = { { tex = "469-1", name = "Part 1", w = 392, h = 512, cw = 512, ch = 512 }, { tex = "469-2", name = "Part 2", w = 367, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 68.7, 57.1 }, { 2, 1, 50.6, 40.2 }, { 3, 2, 57.6, 52.6 }, { 4, 1, 27.5, 30.6 }, { 5, 1, 45.2, 16.1 }, { 6, 1, 54.4, 25.7 }, { 7, 1, 54, 46.3 }, { 0, 1, 73.4, 76.4 } },
     quests = {
       { id = 8730, title = "Nefarius's Corruption", level = 60, min = 60, side = "Both", type = "Raid", obj = "Slay Nefarian and recover the Red Scepter Shard. Return the Red Scepter Shard to Anachronos at the Caverns of Time in Tanaris. You have 5 hours to complete this task.", start = { kind = "npc", name = "Vaelastrasz the Corrupt", inside = "Blackwing Lair" }, rewards = { 21530, 21529 }, chain = { { id = 8286, title = "What Tomorrow Brings", level = 60, start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" } }, { id = 8288, title = "Only One May Rise", level = 60, start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" } }, { id = 8301, title = "The Path of the Righteous", level = 60, start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" } }, { id = 8303, title = "Anachronos", level = 60, start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" } }, { id = 8305, title = "Long Forgotten Memories", level = 60, start = { kind = "npc", name = "Anachronos", map = 1446, x = 65.3, y = 50, zone = "Tanaris" } }, { id = 8519, title = "A Pawn on the Eternal Board", level = 60, start = { kind = "object", name = "Crystalline Tear", map = 1451, x = 28.7, y = 89.1, zone = "Silithus" } }, { id = 8555, title = "The Charge of the Dragonflights", level = 60, start = { kind = "npc", name = "Anachronos", map = 1446, x = 65.3, y = 50, zone = "Tanaris" } } } },
       { id = 8288, title = "Only One May Rise", level = 60, min = 60, side = "Both", type = "Raid", obj = "Return the Head of the Broodlord Lashlayer to Baristolth of the Shifting Sands at Cenarion Hold in Silithus.", start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" }, chain = { { id = 8286, title = "What Tomorrow Brings", level = 60, start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" } } } },
@@ -704,8 +649,6 @@ ns.JOURNAL = {
       { name = "Hakkar", loot = {}, abilities = { { 24324, "Blood Siphon" }, { 24328, "Corrupted Blood" }, { 24327, "Cause Insanity" }, { 24178, "Will of Hakkar" }, { 24318, "Enrage" }, { 24687, "Aspect of Jeklik" }, { 24688, "Aspect of Venoxis" }, { 24686, "Aspect of Mar'li" }, { 24689, "Aspect of Thekal" }, { 24690, "Aspect of Arlokk" }, { 19818, "Double Attack" }, { 24692, "Hakkar Power" } } },
     },
     other = {},
-    maps = { { tex = "309-1", name = "Part 1", w = 433, h = 512, cw = 512, ch = 512 }, { tex = "309-2", name = "Part 2", w = 438, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 20.3, 87.9 }, { 2, 1, 60.9, 60.4 }, { 3, 1, 44.7, 91.5 }, { 4, 1, 88.2, 74.9 }, { 6, 1, 97, 25.9 }, { 9, 2, 7.3, 5.3 }, { 10, 1, 53.7, 34.9 }, { 0, 1, 3.3, 48.5 } },
     quests = {
       { id = 8110, title = "Enchanted South Seas Kelp", level = 60, min = 60, side = "Both", classes = { "druid" }, type = "Raid", start = { kind = "npc", name = "Maywiki of Zuldazar", map = 1434, x = 15.3, y = 16, zone = "Stranglethorn Vale" }, rewards = { 19610 } },
       { id = 8111, title = "Enchanted South Seas Kelp", level = 60, min = 60, side = "Both", classes = { "druid" }, type = "Raid", start = { kind = "npc", name = "Maywiki of Zuldazar", map = 1434, x = 15.3, y = 16, zone = "Stranglethorn Vale" }, rewards = { 19611 }, chain = { { id = 8110, title = "Enchanted South Seas Kelp", level = 60, start = { kind = "npc", name = "Maywiki of Zuldazar", map = 1434, x = 15.3, y = 16, zone = "Stranglethorn Vale" } } } },
@@ -757,8 +700,6 @@ ns.JOURNAL = {
       { name = "Ossirian the Unscarred", loot = {}, abilities = { { 25176, "Strength of Ossirian" }, { 25189, "Enveloping Winds" }, { 25188, "War Stomp" }, { 25195, "Curse of Tongues" }, { 19818, "Double Attack" }, { 25192, "Summon Ossirian Crystal" }, { 25160, "Sand Storm" } } },
     },
     other = { { 21809, 13.2 } },
-    maps = { { tex = "509-1", name = "Map", w = 392, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 61, 33.6 }, { 2, 1, 63.5, 55.3 }, { 3, 1, 2.2, 35.1 }, { 4, 1, 97.8, 62.9 }, { 5, 1, 71.6, 97.3 }, { 6, 1, 23.6, 81.2 }, { 0, 1, 71.2, 6 } },
     quests = {
       { id = 8791, title = "The Fall of Ossirian", level = 60, min = 60, side = "Both", type = "Raid", obj = "Deliver the Head of Ossirian the Unscarred to Commander Mar'alith at Cenarion Hold in Silithus.", start = { kind = "item", name = "Head of Ossirian the Unscarred", drop = "Ossirian the Unscarred, Ruins of Ahn'Qiraj" }, rewards = { 21504, 21507, 21505, 21506 } },
     },
@@ -776,8 +717,6 @@ ns.JOURNAL = {
       { name = "C'thun", loot = { { 21581, 21 }, { 21582, 21 }, { 21583, 21 }, { 22732, 21 }, { 21585, 18.4 }, { 21586, 18.4 }, { 21596, 18.4 }, { 21579, 15 }, { 21126, 8 }, { 21134, 8 }, { 21839, 8 } }, abilities = { { 26213, "Summon Giant Hook Tentacles" }, { 26766, "Summon Giant Eye Tentacles" }, { 26255, "Check Reset" }, { 26648, "Port Out Stomach Effect" }, { 26399, "Despawn Tentacles" }, { 26769, "Summon Eye Tentacles" }, { 26236, "Summon Mouth Tentacles" }, { 26232, "Transform C'Thun -> Phase 2" }, { 26156, "Carapace of C'Thun" }, { 26235, "Cthun Vulnerable" } } },
     },
     other = { { 21681, 22.5 }, { 21685, 22.5 }, { 21690, 22.5 }, { 21687, 18 }, { 21597, 16.7 }, { 21598, 16.7 }, { 21600, 16.7 }, { 21601, 16.7 }, { 21602, 16.7 }, { 21693, 15 }, { 21694, 15 }, { 21695, 15 }, { 21604, 14.3 }, { 21605, 14.3 }, { 21606, 14.3 }, { 21607, 14.3 }, { 21608, 14.3 }, { 21609, 14.3 } },
-    maps = { { tex = "531-1", name = "Map", w = 498, h = 512, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 12.5, 36 }, { 2, 1, 5.9, 52.6 }, { 3, 1, 40.3, 31.6 }, { 4, 1, 75.1, 18 }, { 5, 1, 94.1, 12.1 }, { 6, 1, 39.7, 48.8 }, { 7, 1, 74.4, 71.9 }, { 9, 1, 19.3, 52 }, { 0, 1, 17.2, 27.4 } },
     quests = {
       { id = 8700, title = "Band of Unending Life", level = 60, min = 60, side = "Both", classes = { "druid" }, type = "Raid", obj = "Bring 1 Qiraji Magisterial Ring, 2 Alabaster Idols, 5 Bronze Scarabs and 5 Ivory Scarabs to Windcaller Yessendra in Silithus. You must also attain Honored reputation with Cenarion Circle to complete this quest.", start = { kind = "npc", name = "Windcaller Yessendra", map = 1451, x = 52, y = 38.2, zone = "Silithus" }, rewards = { 21408 } },
       { id = 8699, title = "Band of Vaulted Secrets", level = 60, min = 60, side = "Both", classes = { "mage" }, type = "Raid", obj = "Bring 1 Qiraji Magisterial Ring, 2 Azure Idols, 5 Gold Scarabs and 5 Clay Scarabs to Windcaller Yessendra in Silithus. You must also attain Honored reputation with Cenarion Circle to complete this quest.", start = { kind = "npc", name = "Windcaller Yessendra", map = 1451, x = 52, y = 38.2, zone = "Silithus" }, rewards = { 21414 } },
@@ -830,8 +769,6 @@ ns.JOURNAL = {
       { name = "Kel'Thuzad", loot = { { 23057, 20 }, { 23053, 16.7 }, { 23059, 11.1 }, { 23060, 11.1 }, { 23061, 11.1 }, { 23062, 11.1 }, { 23063, 11.1 }, { 23064, 11.1 }, { 23065, 11.1 }, { 23066, 11.1 }, { 23067, 11.1 } }, abilities = { { 29423, "Kel'Thuzad Channel" }, { 29422, "Kel'Thuzad Channel Effect" }, { 28453, "Summon Type D Periodic" }, { 28408, "Chains of Kel'Thuzad" }, { 27808, "Frost Blast" }, { 27819, "Detonate Mana" }, { 29898, "Guardian of Icecrown" } } },
     },
     other = {},
-    maps = { { tex = "533-1", name = "Part 1", w = 512, h = 276, cw = 512, ch = 512 }, { tex = "533-2", name = "Part 2", w = 512, h = 264, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 24.3, 36.9 }, { 2, 1, 29.9, 34.2 }, { 3, 1, 41.4, 23.5 }, { 4, 1, 24.6, 82.7 }, { 5, 1, 33.3, 74.2 }, { 6, 1, 44.5, 66 }, { 7, 1, 9.7, 77.1 }, { 8, 1, 20.9, 85.2 }, { 9, 1, 4.2, 94 }, { 10, 1, 14.9, 37.4 }, { 11, 2, 18.2, 39.7 }, { 12, 1, 12, 39.2 }, { 13, 2, 3.2, 20.2 }, { 15, 1, 87.6, 6 }, { 0, 1, 96.8, 23.8 } },
     quests = {
       { id = 9251, title = "Atiesh, the Befouled Greatstaff", level = 60, min = 60, side = "Both", type = "Raid", obj = "Anachronos at the Caverns of Time in Tanaris wants the Staff Head of Atiesh and the Base of Atiesh.", start = { kind = "npc", name = "Anachronos", map = 1446, x = 65.3, y = 50, zone = "Tanaris" }, chain = { { id = 9250, title = "Frame of Atiesh", level = 60, start = { kind = "item", name = "Frame of Atiesh" } } } },
       { id = 9033, title = "Echoes of War", level = 60, min = 60, side = "Both", type = "Raid", obj = "Commander Eligor Dawnbringer at Light's Hope Chapel in the Eastern Plaguelands wants you to slay 5 Living Monstrosities, 5 Stoneskin Gargoyles, 8 Deathknight Captains and 3 Venom Stalkers.", start = { kind = "npc", name = "Commander Eligor Dawnbringer", map = 1423, x = 71.7, y = 48.6, zone = "Eastern Plaguelands" }, chain = { { id = 9121, title = "The Dread Citadel - Naxxramas", level = 60, start = { kind = "npc", name = "Archmage Angela Dosantos", map = 1423, x = 71.7, y = 48.7, zone = "Eastern Plaguelands" } } } },

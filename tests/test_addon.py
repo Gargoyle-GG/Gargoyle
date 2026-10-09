@@ -1529,8 +1529,6 @@ ns.JOURNAL = {
       { name = "Edwin VanCleef", loot = { { 5193, 15 }, { 5191, 15 }, { 10399 } }, abilities = {} },
     },
     other = { { 1156, 1.5 } },
-    maps = { { tex = "36-1", name = "Map", w = 512, h = 330, cw = 512, ch = 512 } },
-    spots = { { 1, 1, 20.9, 58.7 }, { 2, 1, 80, 30 }, { 0, 1, 6, 9 } },
     quests = {
       { id = 166, title = "The Defias Brotherhood", level = 22, min = 14, side = "Alliance", type = "Dungeon",
         obj = "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle.",
@@ -1619,20 +1617,12 @@ def test_upgrades_are_marked_for_the_character_you_play():
     assert "2 upgrades|r here for Jainamage" in game.texts()
 
 
-def test_the_map_view_shows_the_map_with_its_bosses():
+def test_there_is_no_map_view():
     game = journal_game()
-    game.click("Map")
-    textures = [w for w in game.fake.widgets.values() if w.kind == "Texture" and w.IsVisible(w) and w.texture == "Interface\\AddOns\\Gargoyle\\Media\\Maps\\36-1"]
-    assert len(textures) == 1 and textures[0].coords == "0,1,0,0.644531"
-    markers = [w for w in game.fake.widgets.values() if w.kind == "Button" and w.IsVisible(w) and w.boss is not None]
-    assert sorted(m.boss for m in markers) == [0, 1, 2]
-    assert sorted(m.label.text for m in markers) == ["1", "2", "E"]
-    vancleef = next(m for m in markers if m.boss == 2)
-    vancleef.scripts["OnClick"](vancleef)  # clicking a boss opens it
-    assert game.db.journal.view == "bosses" and "Cruel Barb" in game.texts()
-    click_row(game, "Shadowfang Keep")
-    view_button(game, "|cffb0b0b0Map").Click(view_button(game, "|cffb0b0b0Map"))  # (greyed: none)
-    assert "There's no map of this place yet." in game.texts()
+    assert game.fake.button("Bosses") and game.fake.button("Quests (2)") and game.fake.button("Map") is None
+    game.lua.execute('GargoyleDB.journal.view = "map"')  # (saved by 0.8.0): opens on Bosses
+    game.ns.Journal.Refresh(game.ns.Journal)
+    assert "Rhahk'Zor" in game.texts()
 
 
 def test_the_quests_view_shows_how_to_get_each_quest_and_its_chain():
@@ -1742,9 +1732,6 @@ def test_the_real_journal_data_loads_and_scrolls():
     game = Game(sync_lua(API, {}))
     places = list(game.ns.JOURNAL.values())
     assert len(places) > 20 and len({p.id for p in places}) == len(places)
-    for p in places:
-        for m in (p.maps or game.lua.table()).values():
-            assert (ADDON / "Media" / "Maps" / f"{m.tex}.blp").is_file() and m.w <= m.cw and m.h <= m.ch
     game.slash()
     game.click("Dungeons")
     assert "Ragefire Chasm" in game.texts() and "Naxxramas" not in game.texts()
@@ -1755,5 +1742,5 @@ def test_the_real_journal_data_loads_and_scrolls():
     journal = game.ns.Journal
     for i in range(1, len(places) + 1):  # (every view of every place draws)
         journal.PickPlace(i)
-        for view in ("bosses", "map", "quests"):
+        for view in ("bosses", "quests"):
             journal.ShowView(view)

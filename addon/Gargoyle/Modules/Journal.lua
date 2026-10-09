@@ -2,7 +2,6 @@
 -- Dungeons pages. The game has no journal of its own for them. Pick a place on the left
 -- (inside a dungeon the tab opens on it), then:
 --   Bosses: each boss in order; its loot and its abilities (in the game's own words).
---   Map:    the place's map, with each boss and the entrance marked.
 --   Quests: the place's quests for your side and class, who gives each one and where, and the
 --           chain of quests that leads to it, with the ones you've done ticked off. "Show on
 --           map" puts the game's own map pin on the next one to do (only when you click it).
@@ -12,34 +11,31 @@
 -- character's gear, talents and level) and the Gargoyle app brings them in. Items you're
 -- wearing aren't marked. The same mark shows on item tooltips anywhere in the game.
 --
--- Its data (Data/Journal.lua) is ids, names, levels, places and drop chances, and the maps
--- are pictures in Media/Maps; item names, icons and tooltips and the abilities' text come
--- from the game. Apart from that one map pin, it only shows things.
+-- Its data (Data/Journal.lua) is ids, names, levels, places and drop chances; item names,
+-- icons and tooltips and the abilities' text come from the game. Apart from that one map pin, it only shows things.
 local _, ns = ...
 
 local Journal = {
   title = "Dungeons",
-  description = "WoW Forever's dungeons and raids: each boss's loot and abilities, maps, and the quests with their "
+  description = "WoW Forever's dungeons and raids: each boss's loot and abilities, and the quests with their "
     .. "chains, with the drops that are upgrades for your character marked (on item tooltips too).",
 }
 ns.RegisterModule("journal", Journal)
 ns.Journal = Journal
 
 local PLACES = ns.JOURNAL or {}
-local MAPS = "Interface\\AddOns\\Gargoyle\\Media\\Maps\\"
 local ROWS, ROW_HEIGHT = 18, 22 -- places in the list
 local BOSS_ROWS, BOSS_HEIGHT = 15, 20
 local LOOT_ROWS, LOOT_HEIGHT = 9, 30
 local ABILITY_ROWS, ABILITY_HEIGHT = 5, 56
 local QUEST_ROWS, QUEST_HEIGHT = 15, 20
 local CHAIN_LINES = 7
-local MARKERS = 24
 local GREEN, GREY, GOLD = "|cff3fd35c", "|cffb0b0b0", "|cffffd100"
-local VIEWS = { "bosses", "map", "quests" }
-local VIEW_TITLES = { bosses = "Bosses", map = "Map", quests = "Quests" }
+local VIEWS = { "bosses", "quests" }
+local VIEW_TITLES = { bosses = "Bosses", quests = "Quests" }
 
 local selected -- the place shown (its place in PLACES)
-local boss, floor, quest = 1, 1, 1 -- the boss (one past the last: other drops), map part and quest shown
+local boss, quest = 1, 1 -- the boss (one past the last: other drops) and quest shown
 local offset, bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0, 0
 local here -- the dungeon you're in, if it's one of them
 local ui = {}
@@ -359,50 +355,6 @@ local function showBosses(p, character)
     or (#list > per and (GREY .. "Scroll for more|r") or ""))
 end
 
-local function showMap(p)
-  local maps = p.maps or {}
-  floor = math.max(1, math.min(floor, #maps))
-  for i, b in ipairs(ui.floorButtons) do
-    local m = maps[i]
-    b:SetShown(#maps > 1 and m ~= nil)
-    if m then
-      b:SetText(plain(m.name))
-      if i == floor then b:LockHighlight() else b:UnlockHighlight() end
-    end
-  end
-  local m = maps[floor]
-  ui.mapFrame:SetShown(m ~= nil)
-  ui.noMap:SetShown(m == nil)
-  for _, marker in ipairs(ui.markers) do marker:Hide() end
-  if not m then return end
-  -- Fitted into the space below the part buttons, keeping its shape.
-  local top = #maps > 1 and 28 or 0
-  local width, height = ui.views.map:GetWidth(), ui.views.map:GetHeight()
-  if not (width and width > 100) then width = 554 end -- (not laid out yet: the window's size)
-  if not (height and height > 100) then height = 324 end
-  height = height - top - 20
-  local scale = math.min(width / m.w, height / m.h)
-  local w, h = m.w * scale, m.h * scale
-  ui.mapFrame:ClearAllPoints()
-  ui.mapFrame:SetPoint("TOP", ui.views.map, "TOP", 0, -top)
-  ui.mapFrame:SetSize(w, h)
-  ui.mapTexture:SetTexture(MAPS .. m.tex)
-  ui.mapTexture:SetTexCoord(0, m.w / m.cw, 0, m.h / m.ch)
-  local n = 0
-  for _, spot in ipairs(p.spots or {}) do
-    if spot[2] == floor and n < MARKERS then
-      n = n + 1
-      local marker = ui.markers[n]
-      marker.boss = spot[1]
-      marker.label:SetText(spot[1] == 0 and "E" or tostring(spot[1]))
-      marker.fill:SetColorTexture(spot[1] == 0 and 0.25 or 0.83, spot[1] == 0 and 0.83 or 0.69, spot[1] == 0 and 0.36 or 0.42)
-      marker:ClearAllPoints()
-      marker:SetPoint("CENTER", ui.mapFrame, "TOPLEFT", w * spot[3] / 100, -h * spot[4] / 100)
-      marker:Show()
-    end
-  end
-end
-
 local function chainLines(q)
   local lines = {}
   local _, nextIndex = nextStep(q)
@@ -502,9 +454,8 @@ function Journal:Refresh(fromMenu)
     ui.views[key]:SetShown(key == v)
     if key == v then ui.viewButtons[key]:LockHighlight() else ui.viewButtons[key]:UnlockHighlight() end
   end
-  ui.viewButtons.map:SetText(#(p.maps or {}) > 0 and "Map" or (GREY .. "Map|r"))
   ui.viewButtons.quests:SetText(string.format("Quests (%d)", #Journal.Quests(p)))
-  if v == "bosses" then showBosses(p, character) elseif v == "map" then showMap(p) else showQuests(p, character) end
+  if v == "bosses" then showBosses(p, character) else showQuests(p, character) end
   ui.status:SetText(status(p, character))
 end
 
@@ -533,7 +484,7 @@ function Journal.ShowView(key)
 end
 
 function Journal.PickPlace(i)
-  selected, boss, floor, quest = i, 1, 1, 1
+  selected, boss, quest = i, 1, 1
   bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
   Journal:Refresh()
 end
@@ -668,58 +619,6 @@ local function createBosses(body)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
     ui.abilities[i] = row
   end
-end
-
-local function createMap(body)
-  ui.floorButtons = {}
-  for i = 1, 8 do
-    local b = CreateFrame("Button", nil, body, "UIPanelButtonTemplate")
-    b:SetSize(70, 20)
-    b:SetPoint("TOPLEFT", (i - 1) * 72, 0)
-    b:SetScript("OnClick", function()
-      floor = i
-      Journal:Refresh(true)
-    end)
-    ui.floorButtons[i] = b
-  end
-  ui.mapFrame = CreateFrame("Frame", nil, body)
-  ui.mapTexture = ui.mapFrame:CreateTexture(nil, "ARTWORK")
-  ui.mapTexture:SetAllPoints()
-  ui.markers = {}
-  for i = 1, MARKERS do
-    local marker = CreateFrame("Button", nil, ui.mapFrame)
-    marker:SetSize(18, 18)
-    marker.edge = marker:CreateTexture(nil, "BORDER")
-    marker.edge:SetAllPoints()
-    marker.edge:SetColorTexture(0.1, 0.07, 0.03, 1)
-    marker.fill = marker:CreateTexture(nil, "ARTWORK")
-    marker.fill:SetPoint("TOPLEFT", 2, -2)
-    marker.fill:SetPoint("BOTTOMRIGHT", -2, 2)
-    marker.label = marker:CreateFontString(nil, "OVERLAY", "GameFontBlackSmall")
-    marker.label:SetPoint("CENTER")
-    marker:SetScript("OnEnter", function(self)
-      local p = PLACES[selected]
-      local b = p and p.bosses[self.boss]
-      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      GameTooltip:SetText(b and (self.boss .. ". " .. plain(b.name)) or "Entrance", 1, 1, 1)
-      if b then GameTooltip:AddLine("Click to see its loot and abilities.", 1, 0.82, 0, true) end
-      GameTooltip:Show()
-    end)
-    marker:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    marker:SetScript("OnClick", function(self)
-      if self.boss > 0 then Journal.PickBoss(self.boss) end
-    end)
-    marker:Hide()
-    ui.markers[i] = marker
-  end
-  ui.noMap = text(body, "GameFontDisable", true)
-  ui.noMap:SetPoint("TOPLEFT", 4, -4)
-  ui.noMap:SetPoint("RIGHT", -4, 0)
-  ui.noMap:SetText("There's no map of this place yet.")
-  local note = text(body, "GameFontDisableSmall", true)
-  note:SetPoint("BOTTOMLEFT", 4, 0)
-  note:SetPoint("RIGHT", -4, 0)
-  note:SetText("Numbers are the bosses, in order; E is the entrance. They're where each boss stood in the original game.")
 end
 
 local function createQuests(body)
@@ -859,7 +758,6 @@ function Journal:CreatePanel(panel)
     ui.views[key] = body
   end
   createBosses(ui.views.bosses)
-  createMap(ui.views.map)
   createQuests(ui.views.quests)
   ui.status = text(detail, "GameFontHighlightSmall", true)
   ui.status:SetPoint("BOTTOMLEFT", 14, 8)
@@ -891,7 +789,7 @@ watcher:SetScript("OnEvent", function(_, event)
   if now ~= here then
     here = now
     if now then -- (opens on the dungeon you've just gone into)
-      selected, boss, floor, quest = now, 1, 1, 1
+      selected, boss, quest = now, 1, 1
       bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
     end
     if ui.panel and ui.panel:IsVisible() then Journal:Refresh() end

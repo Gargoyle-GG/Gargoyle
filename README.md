@@ -9,11 +9,10 @@ site for WoW Forever. Free, like everything on Gargoyle.
   characters you pick up to date on your Gargoyle account, and follow a talent build from
   your account: the game's talent window marks the talents it still wants (talent plans).
   You still pick every talent yourself. Its Dungeons tab is a dungeon journal: every
-  dungeon and raid's bosses, loot and abilities, maps, and quests with the chains that lead
+  dungeon and raid's bosses, loot and abilities, and quests with the chains that lead
   to them (its data is `Data/Journal.lua`; item and spell names and text come from the
   game), with the drops that are upgrades for your character marked, on item tooltips too.
-  The website's gear planner works those out. The maps (`Media/Maps/`) are pieced together
-  from the game's own minimap pictures, which are Blizzard's art. Its "Show on map" button
+  The website's gear planner works those out. Its "Show on map" button
   sets the game's own map pin, only when you click it.
 - **Damage tooltips** (`addon/Gargoyle_Tooltips`), a separate addon you can choose to install,
   add a breakdown of your spells' damage and healing to their tooltips: base numbers, your
