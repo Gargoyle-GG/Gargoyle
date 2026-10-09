@@ -5,6 +5,11 @@
 --   Quests: the place's quests for your side and class, who gives each one and where, and the
 --           chain of quests that leads to it, with the ones you've done ticked off. "Show on
 --           map" puts the game's own map pin on the next one to do (only when you click it).
+--   Map:    the game's own maps of Kalimdor and the Eastern Kingdoms (the world map's art) with
+--           a pin on each entrance. Point at a pin to see the place, click it to open it; point
+--           at a place in the list to light up its pin.
+-- Places Blizzard has announced but that aren't in the game yet say when they come; the
+-- original raids Forever hasn't announced say "Not yet released" and have no pin.
 --
 -- The drops and quest rewards that are upgrades for one of your Gargoyle characters are
 -- marked, with how much better each one is: the website's planner works those out (from the
@@ -31,8 +36,9 @@ local ABILITY_ROWS, ABILITY_HEIGHT = 5, 56
 local QUEST_ROWS, QUEST_HEIGHT = 15, 20
 local CHAIN_LINES = 7
 local GREEN, GREY, GOLD = "|cff3fd35c", "|cffb0b0b0", "|cffffd100"
-local VIEWS = { "bosses", "quests" }
-local VIEW_TITLES = { bosses = "Bosses", quests = "Quests" }
+local VIEWS = { "bosses", "quests", "map" }
+local VIEW_TITLES = { bosses = "Bosses", quests = "Quests", map = "Map" }
+local MAPS = ns.JOURNAL_MAPS or {}
 
 local selected -- the place shown (its place in PLACES)
 local boss, quest = 1, 1 -- the boss (one past the last: other drops) and quest shown
@@ -48,9 +54,11 @@ local function clamp(value, most)
   return math.max(0, math.min(value, most))
 end
 
+-- A place by its game id (or by name: the announced ones have no id yet).
 local function placeIndex(id)
+  if id == nil then return end
   for i, p in ipairs(PLACES) do
-    if p.id == id then return i end
+    if p.id == id or p.name == id then return i end
   end
 end
 
@@ -254,13 +262,25 @@ end
 
 -- ---- The tab ----
 
+local function levelText(p)
+  if not p.min then return end
+  return "Level " .. p.min .. ((p.max and p.max ~= p.min) and ("-" .. p.max) or "") .. (p.expected and " (expected)" or "")
+end
+
+-- When it comes, if it isn't in the game yet.
+local function whenText(p)
+  if not p.when then return end
+  return (p.later and GREY or GOLD) .. plain(p.when) .. "|r"
+end
+
 local function facts(p)
   local parts = {}
-  if p.min then parts[#parts + 1] = "Level " .. p.min .. ((p.max and p.max ~= p.min) and ("-" .. p.max) or "") end
+  parts[#parts + 1] = levelText(p)
   if p.size then parts[#parts + 1] = p.size .. " players" end
   parts[#parts + 1] = p.kind == "raid" and "Raid" or "Dungeon"
-  if p.zone then parts[#parts + 1] = plain(p.zone) end
+  if p.zone and p.zone ~= "" then parts[#parts + 1] = plain(p.zone) end
   if p.new then parts[#parts + 1] = GREEN .. "New in Forever|r" end
+  parts[#parts + 1] = whenText(p)
   return table.concat(parts, "  ·  ")
 end
 
@@ -419,6 +439,8 @@ local function showQuests(p, character)
   ui.rewardHeading:SetShown(#(q.rewards or {}) > 0)
 end
 
+local showMap -- (the Map view's, below)
+
 function Journal:Refresh(fromMenu)
   if not ui.panel then return end
   if #PLACES == 0 then
@@ -426,7 +448,7 @@ function Journal:Refresh(fromMenu)
     return
   end
   selected = selected or here or placeIndex(GargoyleDB.journal.place) or 1
-  GargoyleDB.journal.place = PLACES[selected].id
+  GargoyleDB.journal.place = PLACES[selected].id or PLACES[selected].name
   local character = Journal.Chosen()
 
   -- The list of places.
@@ -436,8 +458,9 @@ function Journal:Refresh(fromMenu)
     row:SetShown(p ~= nil)
     if p then
       row.index = i + offset
-      row.name:SetText(plain(p.name) .. (i + offset == here and (" " .. GREEN .. "(here)|r") or ""))
-      row.level:SetText(p.kind == "raid" and "Raid" or (p.min and (p.min .. "-" .. (p.max or p.min)) or ""))
+      row.name:SetText((p.later and GREY or "") .. plain(p.name) .. (p.later and "|r" or "")
+        .. (i + offset == here and (" " .. GREEN .. "(here)|r") or ""))
+      row.level:SetText(p.later and "Not yet" or p.kind == "raid" and "Raid" or (p.min and (p.min .. "-" .. (p.max or p.min)) or ""))
       local n = character and character.upgrades and Journal.Upgrades(p, character) or 0
       row.ups:SetText(n > 0 and (GREEN .. "+" .. n .. "|r") or "")
       row.selectedBg:SetShown(i + offset == selected)
@@ -455,7 +478,7 @@ function Journal:Refresh(fromMenu)
     if key == v then ui.viewButtons[key]:LockHighlight() else ui.viewButtons[key]:UnlockHighlight() end
   end
   ui.viewButtons.quests:SetText(string.format("Quests (%d)", #Journal.Quests(p)))
-  if v == "bosses" then showBosses(p, character) else showQuests(p, character) end
+  if v == "bosses" then showBosses(p, character) elseif v == "quests" then showQuests(p, character) else showMap(character) end
   ui.status:SetText(status(p, character))
 end
 
@@ -529,6 +552,228 @@ local function itemTooltip(row)
     GameTooltip:Show()
   end)
   row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+-- ---- The Map view ----
+-- The game's own world map art for the two continents, trimmed to the land as on the website
+-- (C_Map.GetMapArtLayers / GetMapArtLayerTextures: what the world map itself draws with, so
+-- the addon ships no pictures), with a pin on each entrance.
+
+local MAP_HEIGHT = 322
+local PIN, NEAR, SPREAD = 11, 9, 7 -- a pin's size; pins closer than NEAR are spread SPREAD round their spot
+local COLORS = { dungeon = { 1, 0.78, 0.3 }, raid = { 0.92, 0.36, 0.24 } }
+local MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask" -- (round)
+local lit -- the place lit from the list (its place in PLACES)
+
+local function mapWidth(m)
+  return math.floor(MAP_HEIGHT * (m.crop[3] - m.crop[1]) / (m.crop[4] - m.crop[2]) + 0.5)
+end
+
+-- One continent's art, its tiles placed so the trimmed part fills `holder` (which clips the
+-- rest). False when the game doesn't give it.
+local function drawArt(holder, m, width)
+  if not (C_Map and C_Map.GetMapArtLayers and C_Map.GetMapArtLayerTextures) then return false end
+  local ok, layers = pcall(C_Map.GetMapArtLayers, m.id)
+  local info = ok and type(layers) == "table" and layers[1]
+  local ok2, textures = pcall(C_Map.GetMapArtLayerTextures, m.id, 1)
+  if not (info and ok2 and type(textures) == "table" and #textures > 0) then return false end
+  local scale = width / (m.crop[3] - m.crop[1])
+  local canvas = CreateFrame("Frame", nil, holder)
+  canvas:SetSize(info.layerWidth * scale, info.layerHeight * scale)
+  canvas:SetPoint("TOPLEFT", -m.crop[1] * scale, m.crop[2] * scale)
+  local cols = math.ceil(info.layerWidth / info.tileWidth)
+  local rows = math.ceil(info.layerHeight / info.tileHeight)
+  for row = 1, rows do
+    for col = 1, cols do
+      local tile = canvas:CreateTexture(nil, "BACKGROUND")
+      tile:SetTexture(textures[(row - 1) * cols + col])
+      tile:SetSize(info.tileWidth * scale, info.tileHeight * scale)
+      tile:SetPoint("TOPLEFT", (col - 1) * info.tileWidth * scale, -(row - 1) * info.tileHeight * scale)
+    end
+  end
+  return true
+end
+
+local function disc(pin, size, layer, sublevel)
+  local t = pin:CreateTexture(nil, layer, nil, sublevel)
+  t:SetSize(size, size)
+  t:SetPoint("CENTER")
+  local mask = pin:CreateMaskTexture()
+  mask:SetTexture(MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+  mask:SetAllPoints(t)
+  t:AddMaskTexture(mask)
+  return t
+end
+
+local function rowFor(index)
+  for _, row in ipairs(ui.rows or {}) do
+    if row:IsShown() and row.index == index then return row end
+  end
+end
+
+local function pinTooltip(pin)
+  local p = PLACES[pin.index]
+  local color = COLORS[p.kind] or COLORS.dungeon
+  GameTooltip:SetOwner(pin, "ANCHOR_RIGHT")
+  GameTooltip:SetText(plain(p.name), color[1], color[2], color[3])
+  local where = p.pin.zone and ("somewhere in " .. plain(p.zone) .. " (its entrance isn't known yet)") or plain(p.zone or "")
+  GameTooltip:AddLine((levelText(p) or "Levels not known") .. (p.kind == "raid" and " raid" or "") .. "  ·  " .. where, 1, 1, 1, true)
+  local bosses = #p.bosses > 0 and #p.bosses or p.bossCount
+  GameTooltip:AddLine((p.size or "?") .. " players" .. (bosses and ("  ·  " .. bosses .. " boss" .. (bosses == 1 and "" or "es")) or ""), 0.7, 0.7, 0.7)
+  if p.when then GameTooltip:AddLine(plain(p.when), 1, 0.82, 0) end
+  local character = Journal.Chosen()
+  local n = character and character.upgrades and Journal.Upgrades(p, character) or 0
+  if n > 0 then
+    GameTooltip:AddLine(string.format("%d upgrade%s for %s", n, n == 1 and "" or "s", plain(character.name)), 0.25, 0.83, 0.36)
+  end
+  GameTooltip:AddLine("Click to open it.", 0.6, 0.6, 0.6)
+  GameTooltip:Show()
+end
+
+-- The glow (the place lit from the list, and the one picked) and the panel beside the maps.
+local function showLit()
+  for _, pin in ipairs(ui.pins) do
+    pin.glow:SetShown(pin.index == selected or pin.index == lit)
+  end
+  local p = PLACES[lit or selected]
+  ui.mapName:SetText(plain(p.name))
+  local lines = { facts(p) }
+  if not p.pin then
+    lines[#lines + 1] = GREY .. (p.later and "Not on the map: not released yet." or "Not on the map: where it is isn't known yet.") .. "|r"
+  elseif p.pin.zone then
+    lines[#lines + 1] = GREY .. "Somewhere in " .. plain(p.zone) .. ": its entrance isn't known yet.|r"
+  end
+  ui.mapFacts:SetText(table.concat(lines, "\n\n"))
+end
+
+-- The pins (with their upgrade rings) and the panel beside the maps.
+function showMap(character)
+  if not ui.artTried then -- (drawn the first time the Map view shows)
+    ui.artTried = true
+    local missing = false
+    for _, holder in ipairs(ui.mapHolders) do
+      if not drawArt(holder, holder.map, holder.width) then missing = true end
+    end
+    ui.noArt:SetShown(missing)
+  end
+  for _, pin in ipairs(ui.pins) do
+    pin.up:SetShown(character ~= nil and character.upgrades ~= nil and Journal.Upgrades(PLACES[pin.index], character) > 0)
+  end
+  showLit()
+end
+
+function Journal.LightPin(index)
+  lit = index
+  if ui.panel and ui.views and ui.views.map:IsVisible() then showLit() end
+end
+
+local function createMap(body)
+  ui.mapHolders, ui.pins = {}, {}
+  local x = 0
+  for _, m in ipairs(MAPS) do
+    local width = mapWidth(m)
+    local holder = CreateFrame("Frame", nil, body)
+    holder:SetSize(width, MAP_HEIGHT)
+    holder:SetPoint("TOPLEFT", x, 0)
+    if holder.SetClipsChildren then holder:SetClipsChildren(true) end
+    local back = holder:CreateTexture(nil, "BACKGROUND", nil, -8) -- (under the art; all there is without it)
+    back:SetAllPoints()
+    back:SetColorTexture(0.12, 0.1, 0.07, 1)
+    holder.map, holder.width = m, width
+    ui.mapHolders[#ui.mapHolders + 1] = holder
+    -- The pins: on their own frame over the map, so the ones near an edge aren't cut off.
+    local over = CreateFrame("Frame", nil, body)
+    over:SetAllPoints(holder)
+    over:SetFrameLevel(holder:GetFrameLevel() + 5)
+    local here = {}
+    for i, p in ipairs(PLACES) do
+      if p.pin and p.pin.map == m.id then
+        here[#here + 1] = { index = i, x = p.pin.x / 100 * width, y = p.pin.y / 100 * MAP_HEIGHT }
+      end
+    end
+    local groups = {}
+    for _, spot in ipairs(here) do
+      local into
+      for _, g in ipairs(groups) do
+        for _, o in ipairs(g) do
+          if math.abs(o.x - spot.x) < NEAR and math.abs(o.y - spot.y) < NEAR then into = g end
+        end
+        if into then break end
+      end
+      if into then into[#into + 1] = spot else groups[#groups + 1] = { spot } end
+    end
+    for _, g in ipairs(groups) do
+      local cx, cy = 0, 0
+      for _, spot in ipairs(g) do cx, cy = cx + spot.x / #g, cy + spot.y / #g end
+      for k, spot in ipairs(g) do
+        local turn = (#g == 2 and math.pi or -math.pi / 2) + 2 * math.pi * (k - 1) / #g
+        local r = #g > 1 and SPREAD or 0
+        local p = PLACES[spot.index]
+        local color = COLORS[p.kind] or COLORS.dungeon
+        local pin = CreateFrame("Button", nil, over)
+        pin:SetSize(PIN + 6, PIN + 6)
+        pin:SetPoint("CENTER", over, "TOPLEFT", cx + r * math.cos(turn), -(cy + r * math.sin(turn)))
+        pin.index = spot.index
+        pin.glow = disc(pin, PIN + 7, "BACKGROUND", 1) -- (lit or picked)
+        pin.glow:SetColorTexture(1, 0.9, 0.55, 0.9)
+        pin.up = disc(pin, PIN + 4, "BORDER", 1) -- (has upgrades)
+        pin.up:SetColorTexture(0.25, 0.83, 0.36, 1)
+        local edge = disc(pin, PIN, "ARTWORK", 1)
+        local fill = disc(pin, PIN - 4, "ARTWORK", 2)
+        if p.pin.zone then -- (only its zone is known: hollow)
+          edge:SetColorTexture(color[1], color[2], color[3], 1)
+          fill:SetColorTexture(0.1, 0.07, 0.04, 0.8)
+        else
+          edge:SetColorTexture(0.08, 0.05, 0.02, 1)
+          fill:SetColorTexture(color[1], color[2], color[3], 1)
+        end
+        pin:SetScript("OnEnter", function(self)
+          pinTooltip(self)
+          local row = rowFor(self.index)
+          if row then row:LockHighlight() end
+        end)
+        pin:SetScript("OnLeave", function(self)
+          GameTooltip:Hide()
+          local row = rowFor(self.index)
+          if row then row:UnlockHighlight() end
+        end)
+        pin:SetScript("OnClick", function(self)
+          Journal.PickPlace(self.index)
+          Journal.ShowView("bosses")
+        end)
+        ui.pins[#ui.pins + 1] = pin
+      end
+    end
+    x = x + width
+  end
+  ui.noArt = text(body, "GameFontDisableSmall", true)
+  ui.noArt:SetPoint("BOTTOMLEFT", 6, 6)
+  ui.noArt:SetWidth(math.max(x - 12, 100))
+  ui.noArt:SetText("The game didn't give its map pictures: the pins are where the entrances are.")
+  ui.noArt:Hide()
+
+  -- Beside the maps: the place, a key, and what isn't on the map.
+  local side = CreateFrame("Frame", nil, body)
+  side:SetPoint("TOPLEFT", x + 12, 0)
+  side:SetPoint("BOTTOMRIGHT")
+  ui.mapName = text(side, "GameFontNormal")
+  ui.mapName:SetPoint("TOPLEFT")
+  ui.mapName:SetPoint("RIGHT")
+  ui.mapFacts = text(side, "GameFontHighlightSmall", true)
+  ui.mapFacts:SetPoint("TOPLEFT", ui.mapName, "BOTTOMLEFT", 0, -6)
+  ui.mapFacts:SetPoint("RIGHT")
+  ui.mapFacts:SetJustifyV("TOP")
+  local off = {}
+  for _, p in ipairs(PLACES) do
+    if not p.pin and not p.later then off[#off + 1] = plain(p.name) end
+  end
+  local key = text(side, "GameFontDisableSmall", true)
+  key:SetPoint("BOTTOMLEFT")
+  key:SetPoint("RIGHT")
+  key:SetJustifyV("BOTTOM")
+  key:SetText("|cffffc74dGold|r: dungeon. |cffeb5c3dRed|r: raid. Hollow: only its zone is known. Green ring: upgrades "
+    .. "for your character.\n\nPoint at a place in the list to find it; click a pin to open it.\n\nRaids not released yet "
+    .. "aren't on the map." .. (#off > 0 and ("\nNot on the map yet: " .. table.concat(off, ", ") .. ".") or ""))
 end
 
 local function createBosses(body)
@@ -726,6 +971,12 @@ function Journal:CreatePanel(panel)
     row.name:SetPoint("LEFT", 6, 0)
     row.name:SetPoint("RIGHT", row.ups, "LEFT", -4, 0)
     row:SetScript("OnClick", function(self) Journal.PickPlace(self.index) end)
+    row:SetScript("OnEnter", function(self) -- (on the Map view: lights its pin)
+      if view() == "map" then Journal.LightPin(self.index) end
+    end)
+    row:SetScript("OnLeave", function()
+      if lit then Journal.LightPin(nil) end
+    end)
     ui.rows[i] = row
   end
 
@@ -759,6 +1010,7 @@ function Journal:CreatePanel(panel)
   end
   createBosses(ui.views.bosses)
   createQuests(ui.views.quests)
+  createMap(ui.views.map)
   ui.status = text(detail, "GameFontHighlightSmall", true)
   ui.status:SetPoint("BOTTOMLEFT", 14, 8)
   ui.status:SetPoint("RIGHT", -14, 0)

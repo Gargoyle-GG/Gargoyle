@@ -4,10 +4,17 @@
 -- { item id, drop chance in % } and its abilities as { spell id, name }; and its quests,
 -- each with who or what
 -- starts it and where (the game's map id and x/y), and the quests before it, oldest first.
+-- Each place's pin is in % of the part of its continent's map the Map view shows (the
+-- game's own map art, trimmed to the land: JOURNAL_MAPS, in the art's 1002x668 pixels).
 local _, ns = ...
 
+ns.JOURNAL_MAPS = {
+  { id = 1414, name = "Kalimdor", crop = { 318, 0, 690, 668 } },
+  { id = 1415, name = "Eastern Kingdoms", crop = { 300, 0, 672, 668 } },
+}
+
 ns.JOURNAL = {
-  { id = 389, name = "Ragefire Chasm", kind = "dungeon", size = 5, min = 13, max = 18, zone = "Orgrimmar",
+  { id = 389, name = "Ragefire Chasm", kind = "dungeon", size = 5, min = 13, max = 18, zone = "Orgrimmar", pin = { map = 1414, x = 71.81, y = 44.77 },
     bosses = {
       { name = "Oggleflint", loot = { { 272998 } }, abilities = { { 15584, "Cleave" } } },
       { name = "Taragaman the Hungerer", loot = { { 14148, 40 }, { 14149, 40 }, { 14145, 20 }, { 2073 } }, abilities = { { 18072, "Uppercut" }, { 11970, "Fire Nova" } } },
@@ -24,7 +31,7 @@ ns.JOURNAL = {
       { id = 5725, title = "The Power to Destroy...", level = 16, min = 9, side = "Horde", type = "Dungeon", obj = "Bring the books Spells of Shadow and Incantations from the Nether to Varimathras in Undercity.", start = { kind = "npc", name = "Varimathras", map = 1458, x = 56.3, y = 92.2, zone = "Undercity" }, rewards = { 15449, 15450, 15451 } },
     },
   },
-  { id = 3065, name = "The Hall of Thanes", kind = "dungeon", size = 5, min = 13, max = 20, zone = "Ironforge", new = true,
+  { id = 3065, name = "The Hall of Thanes", kind = "dungeon", size = 5, min = 13, max = 20, zone = "Ironforge", new = true, pin = { map = 1415, x = 51.91, y = 52.44 },
     bosses = {
       { name = "Faldrim Anvilmar", loot = { { 270227 }, { 271096 }, { 271097 } }, abilities = { { 1292602, "Anvilmar's Curse" } } },
       { name = "Infurnus", loot = {}, abilities = {} },
@@ -35,7 +42,7 @@ ns.JOURNAL = {
     quests = {
     },
   },
-  { id = 2999, name = "Ruins of Lordaeron", kind = "dungeon", size = 5, min = 15, max = 22, zone = "Tirisfal Glades", new = true,
+  { id = 2999, name = "Ruins of Lordaeron", kind = "dungeon", size = 5, min = 15, max = 22, zone = "Tirisfal Glades", new = true, pin = { map = 1415, x = 40.45, y = 24.13 },
     bosses = {
       { name = "Witherfang", loot = {}, abilities = {} },
       { name = "The Abandoned", loot = { { 271216 } }, abilities = {} },
@@ -50,7 +57,7 @@ ns.JOURNAL = {
       { id = 92422, title = "The Wrath of Rath'mael", level = 22, side = "Both", obj = "Kill Rath'mael in the Ruins of Lordaeron for Deathguard Kristof in Brill.", start = { kind = "npc", name = "Deathguard Kristof", map = 1420, x = 65.2, y = 60.2, zone = "Tirisfal Glades" } },
     },
   },
-  { id = 43, name = "Wailing Caverns", kind = "dungeon", size = 5, min = 15, max = 24, zone = "The Barrens",
+  { id = 43, name = "Wailing Caverns", kind = "dungeon", size = 5, min = 15, max = 24, zone = "The Barrens", pin = { map = 1414, x = 55.61, y = 55.24 },
     bosses = {
       { name = "Lady Anacondra", loot = { { 5404, 43.33 }, { 10412, 9.6 }, { 273088 } }, abilities = { { 5187, "Healing Touch" }, { 700, "Sleep" }, { 8148, "Thorns Aura" }, { 9532, "Lightning Bolt" } } },
       { name = "Lord Cobrahn", loot = { { 6465, 60 }, { 6460, 20 }, { 10410, 20 } }, abilities = { { 7965, "Cobrahn Serpent Form" }, { 5188, "Healing Touch" }, { 8040, "Druid's Slumber" }, { 9532, "Lightning Bolt" } } },
@@ -74,7 +81,7 @@ ns.JOURNAL = {
       { id = 6981, title = "The Glowing Shard", level = 26, min = 15, side = "Both", obj = "Travel to Ratchet to find someone that can tell you more about the glowing shard. Then, deliver the shard as you are directed.", start = { kind = "item", name = "Glowing Shard" } },
     },
   },
-  { id = 36, name = "Deadmines", kind = "dungeon", size = 5, min = 17, max = 26, zone = "Westfall",
+  { id = 36, name = "Deadmines", kind = "dungeon", size = 5, min = 17, max = 26, zone = "Westfall", pin = { map = 1415, x = 28.92, y = 79.58 },
     bosses = {
       { name = "Rhahk'Zor", loot = { { 5187, 95 }, { 872, 5 } }, abilities = { { 6304, "Rhahk'Zor Slam" } } },
       { name = "Sneed", loot = { { 5195, 67.32 }, { 5194, 27.65 }, { 285292 } }, abilities = { { 6713, "Disarm" } } },
@@ -96,7 +103,7 @@ ns.JOURNAL = {
       { id = 373, title = "The Unsent Letter", level = 22, min = 16, side = "Alliance", obj = "Deliver the Letter to the City Architect to Baros Alexston in Stormwind.", start = { kind = "item", name = "An Unsent Letter", drop = "Edwin VanCleef, Deadmines" } },
     },
   },
-  { id = 33, name = "Shadowfang Keep", kind = "dungeon", size = 5, min = 20, max = 30, zone = "Silverpine Forest",
+  { id = 33, name = "Shadowfang Keep", kind = "dungeon", size = 5, min = 20, max = 30, zone = "Silverpine Forest", pin = { map = 1415, x = 29.76, y = 32.8 },
     bosses = {
       { name = "Rethilgore", loot = { { 5254, 100 }, { 273456 }, { 273457 } }, abilities = { { 7295, "Soul Drain" } } },
       { name = "Razorclaw the Butcher", loot = { { 6226, 45 }, { 6633, 45 }, { 1292, 10 }, { 4575 } }, abilities = { { 7485, "Butcher Drain" } } },
@@ -115,7 +122,7 @@ ns.JOURNAL = {
       { id = 1014, title = "Arugal Must Die", level = 27, min = 18, side = "Horde", type = "Dungeon", obj = "Kill Arugal and bring his head to Dalar Dawnweaver at the Sepulcher.", start = { kind = "npc", name = "Dalar Dawnweaver", map = 1421, x = 44.2, y = 39.8, zone = "Silverpine Forest" }, rewards = { 6414 } },
     },
   },
-  { id = 48, name = "Blackfathom Deeps", kind = "dungeon", size = 5, min = 24, max = 32, zone = "Ashenvale",
+  { id = 48, name = "Blackfathom Deeps", kind = "dungeon", size = 5, min = 24, max = 32, zone = "Ashenvale", pin = { map = 1414, x = 33.96, y = 34.85 },
     bosses = {
       { name = "Ghamoo-ra", loot = { { 6908, 60 }, { 6907, 40 } }, abilities = { { 5568, "Trample" } } },
       { name = "Lady Sarevess", loot = { { 888, 40 }, { 11121, 40 }, { 3078, 20 } }, abilities = { { 246, "Slow" }, { 865, "Frost Nova" }, { 8435, "Forked Lightning" }, { 6660, "Shoot" } } },
@@ -142,7 +149,7 @@ ns.JOURNAL = {
       { id = 6561, title = "Blackfathom Villainy", level = 27, min = 18, side = "Horde", type = "Dungeon", obj = "Bring the head of Twilight Lord Kelris to Bashana Runetotem in Thunder Bluff.", start = { kind = "npc", name = "Argent Guard Thaelrid", inside = "Blackfathom Deeps" }, rewards = { 7001, 7002 } },
     },
   },
-  { id = 34, name = "Stormwind Stockade", kind = "dungeon", size = 5, min = 24, max = 32, zone = "Elwynn Forest",
+  { id = 34, name = "Stormwind Stockade", kind = "dungeon", size = 5, min = 24, max = 32, zone = "Elwynn Forest", pin = { map = 1415, x = 35.3, y = 69.16 },
     bosses = {
       { name = "Targorr the Dread", loot = { { 273805 } }, abilities = { { 674, "Dual Wield" }, { 8599, "Enrage" } } },
       { name = "Kam Deepfury", loot = { { 2280, 1.2 }, { 274092 } }, abilities = { { 7164, "Defensive Stance" }, { 8242, "Shield Slam" } } },
@@ -160,7 +167,7 @@ ns.JOURNAL = {
       { id = 391, title = "The Stockade Riots", level = 29, min = 16, side = "Alliance", type = "Dungeon", obj = "Kill Bazil Thredd and bring his head back to Warden Thelwater at the Stockade.", start = { kind = "npc", name = "Warden Thelwater", map = 1453, x = 51.5, y = 69.4, zone = "Stormwind City" }, chain = { { id = 373, title = "The Unsent Letter", level = 22, start = { kind = "item", name = "An Unsent Letter", drop = "Edwin VanCleef, Deadmines" } }, { id = 389, title = "Bazil Thredd", level = 22, start = { kind = "npc", name = "Baros Alexston", map = 1453, x = 57.7, y = 47.9, zone = "Stormwind City" } } } },
     },
   },
-  { id = 2998, name = "Excavation Site: Wetlands", kind = "dungeon", size = 5, min = 26, max = 33, zone = "Wetlands", new = true,
+  { id = 2998, name = "Excavation Site: Wetlands", kind = "dungeon", size = 5, min = 26, max = 33, zone = "Wetlands", new = true, pin = { map = 1415, x = 52.51, y = 49.59 },
     bosses = {
       { name = "Saltspine", loot = { { 273022 }, { 273023 }, { 273024 } }, abilities = {} },
       { name = "Shadetooth", loot = { { 273025 }, { 273027 } }, abilities = {} },
@@ -173,7 +180,7 @@ ns.JOURNAL = {
       { id = 98823, title = "Earthen Echo", level = 31, side = "Both", obj = "Bring the Titan Relic to Muln Earthfury at the Skywatcher Plateau in northwest Mulgore.", start = { kind = "npc", name = "Bashana Runetotem", map = 1456, x = 71, y = 33.9, zone = "Thunder Bluff" } },
     },
   },
-  { id = 2959, name = "City of Dalaran", kind = "dungeon", size = 5, min = 28, max = 35, zone = "Silverpine Forest", new = true,
+  { id = 2959, name = "City of Dalaran", kind = "dungeon", size = 5, min = 28, max = 35, zone = "Silverpine Forest", new = true, pin = { map = 1415, x = 37.77, y = 30.21 },
     bosses = {
       { name = "Arcane Anomaly", loot = {}, abilities = {} },
       { name = "Fel Ancient", loot = {}, abilities = {} },
@@ -192,7 +199,7 @@ ns.JOURNAL = {
       { id = 96986, title = "The Grave Knight", level = 33, side = "Both", start = { kind = "npc" } },
     },
   },
-  { id = 90, name = "Gnomeregan", kind = "dungeon", size = 5, min = 29, max = 38, zone = "Dun Morogh",
+  { id = 90, name = "Gnomeregan", kind = "dungeon", size = 5, min = 29, max = 38, zone = "Dun Morogh", pin = { map = 1415, x = 34.66, y = 53.82 },
     bosses = {
       { name = "Viscous Fallout", loot = { { 9454, 55 }, { 9453, 25 }, { 9452, 20 } }, abilities = {} },
       { name = "Electrocutioner 6000", loot = { { 9447, 40 }, { 9448, 40 }, { 9446, 20 } }, abilities = { { 11082, "Megavolt" }, { 15605, "Shock" }, { 11085, "Chain Bolt" } } },
@@ -211,7 +218,7 @@ ns.JOURNAL = {
       { id = 2929, title = "The Grand Betrayal", level = 35, min = 25, side = "Alliance", type = "Dungeon", obj = "Venture to Gnomeregan and kill Mekgineer Thermaplugg. Return to High Tinker Mekkatorque when the task is complete.", start = { kind = "npc", name = "High Tinker Mekkatorque", map = 1455, x = 68.8, y = 49, zone = "Ironforge" }, rewards = { 9623, 9624, 9625 } },
     },
   },
-  { id = 47, name = "Razorfen Kraul", kind = "dungeon", size = 5, min = 29, max = 38, zone = "The Barrens",
+  { id = 47, name = "Razorfen Kraul", kind = "dungeon", size = 5, min = 29, max = 38, zone = "The Barrens", pin = { map = 1414, x = 51.59, y = 70.35 },
     bosses = {
       { name = "Roogug", loot = { { 274152 }, { 274155 } }, abilities = { { 9532, "Lightning Bolt" } } },
       { name = "Aggem Thorncurse", loot = { { 6681, 100 } }, abilities = { { 6192, "Battle Shout" }, { 8286, "Summon Boar Spirit" }, { 14900, "Chain Heal" } } },
@@ -228,7 +235,7 @@ ns.JOURNAL = {
       { id = 1101, title = "The Crone of the Kraul", level = 34, min = 29, side = "Alliance", type = "Dungeon", obj = "Bring Razorflank's Medallion to Falfindel Waywarder in Thalanaar.", start = { kind = "npc", name = "Falfindel Waywarder", map = 1441, x = 8.1, y = 19, zone = "Thousand Needles" }, rewards = { 4197, 6742, 6725 }, chain = { { id = 1100, title = "Lonebrow's Journal", level = 34, start = { kind = "item", name = "Henrig Lonebrow's Journal" } } } },
     },
   },
-  { id = 189, name = "Scarlet Monastery", kind = "dungeon", size = 5, min = 30, max = 38, zone = "Tirisfal Glades",
+  { id = 189, name = "Scarlet Monastery", kind = "dungeon", size = 5, min = 30, max = 38, zone = "Tirisfal Glades", pin = { map = 1415, x = 48, y = 19.49 },
     bosses = {
       { name = "Interrogator Vishas", loot = { { 7683, 90 }, { 7682, 10 }, { 252513 } }, abilities = { { 14032, "Shadow Word: Pain" } } },
       { name = "Bloodmage Thalnos", loot = { { 7684, 50 }, { 7685, 50 } }, abilities = { { 8814, "Flame Spike" }, { 12470, "Fire Nova" }, { 8053, "Flame Shock" }, { 9613, "Shadow Bolt" } } },
@@ -249,7 +256,14 @@ ns.JOURNAL = {
       { id = 1048, title = "Into The Scarlet Monastery", level = 42, min = 33, side = "Horde", type = "Dungeon", obj = "Kill High Inquisitor Whitemane, Scarlet Commander Mograine, Herod, the Scarlet Champion and Houndmaster Loksey and then report back to Varimathras in the Undercity.", start = { kind = "npc", name = "Varimathras", map = 1458, x = 56.3, y = 92.2, zone = "Undercity" } },
     },
   },
-  { id = 129, name = "Razorfen Downs", kind = "dungeon", size = 5, min = 37, max = 46, zone = "The Barrens",
+  { name = "The Drowned City", kind = "dungeon", size = 5, min = 35, max = 40, zone = "Stranglethorn Vale", new = true, when = "Coming at launch", expected = true, pin = { map = 1415, x = 35.26, y = 84.46 },
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { id = 129, name = "Razorfen Downs", kind = "dungeon", size = 5, min = 37, max = 46, zone = "The Barrens", pin = { map = 1414, x = 57.99, y = 71.18 },
     bosses = {
       { name = "Tuten'kash", loot = { { 10776, 34.11 }, { 10775, 32.35 }, { 10777, 30.28 } }, abilities = { { 12252, "Web Spray" }, { 12255, "Curse of Tuten'kash" } } },
       { name = "Plaguemaw the Rotting", loot = {}, abilities = { { 12946, "Putrid Stench" } } },
@@ -269,7 +283,14 @@ ns.JOURNAL = {
       { id = 3636, title = "Bring the Light", level = 42, min = 39, side = "Alliance", type = "Dungeon", obj = "Archbishop Bendictus wants you to slay Amnennar the Coldbringer in Razorfen Downs.", start = { kind = "npc", name = "Archbishop Benedictus", map = 1453, x = 50.3, y = 45.5, zone = "Stormwind City" } },
     },
   },
-  { id = 70, name = "Uldaman", kind = "dungeon", size = 5, min = 41, max = 51, zone = "Badlands",
+  { name = "Krol'dok Stronghold", kind = "dungeon", size = 5, min = 40, max = 45, zone = "Riverglades", new = true, when = "Coming at launch", expected = true, pin = { map = 1415, x = 70.18, y = 64.65 },
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { id = 70, name = "Uldaman", kind = "dungeon", size = 5, min = 41, max = 51, zone = "Badlands", pin = { map = 1415, x = 64.4, y = 57.64 },
     bosses = {
       { name = "Revelosh", loot = { { 9387, 25 }, { 9388, 25 }, { 9389, 25 }, { 9390, 25 } }, abilities = { { 16006, "Chain Lightning" }, { 15801, "Lightning Bolt" } } },
       { name = "The Lost Dwarves", loot = {}, abilities = { { 14516, "Strike" }, { 15620, "Shoot" }, { 8242, "Shield Slam" }, { 6268, "Rushing Charge" } } },
@@ -288,7 +309,7 @@ ns.JOURNAL = {
       { id = 2204, title = "Restoring the Necklace", level = 44, min = 37, side = "Alliance", type = "Dungeon", obj = "Obtain a power source from the most powerful construct you can find in Uldaman, and deliver it to Talvash del Kissel in Ironforge.", start = { kind = "object", name = "Talvash's Scrying Bowl" }, chain = { { id = 2198, title = "The Shattered Necklace", level = 41, start = { kind = "item", name = "Shattered Necklace" } }, { id = 2199, title = "Lore for a Price", level = 41, start = { kind = "npc", name = "Talvash del Kissel", map = 1455, x = 36.4, y = 3.6, zone = "Ironforge" } }, { id = 2200, title = "Back to Uldaman", level = 42, start = { kind = "npc", name = "Talvash del Kissel", map = 1455, x = 36.4, y = 3.6, zone = "Ironforge" } }, { id = 2201, title = "Find the Gems", level = 43, start = { kind = "npc", name = "Remains of a Paladin", inside = "Uldaman" } } } },
     },
   },
-  { id = 209, name = "Zul'Farrak", kind = "dungeon", size = 5, min = 44, max = 54, zone = "Tanaris",
+  { id = 209, name = "Zul'Farrak", kind = "dungeon", size = 5, min = 44, max = 54, zone = "Tanaris", pin = { map = 1414, x = 60.6, y = 79.85 },
     bosses = {
       { name = "Hydromancer Velratha", loot = {}, abilities = { { 12491, "Healing Wave" }, { 11086, "Ward of Zum'rah" }, { 15245, "Shadow Bolt Volley" }, { 12739, "Shadow Bolt" } } },
       { name = "Gahz'rilla", loot = {}, abilities = { { 11836, "Freeze Solid" }, { 11902, "Gahz'rilla Slam" }, { 11131, "Icicle" } } },
@@ -307,7 +328,7 @@ ns.JOURNAL = {
       { id = 3527, title = "The Prophecy of Mosh'aru", level = 47, min = 40, side = "Both", type = "Dungeon", obj = "Bring the First and Second Mosh'aru Tablets to Yeh'kinya in Tanaris.", start = { kind = "npc", name = "Yeh'kinya", map = 1446, x = 67, y = 22.4, zone = "Tanaris" }, chain = { { id = 3520, title = "Screecher Spirits", level = 44, start = { kind = "npc", name = "Yeh'kinya", map = 1446, x = 67, y = 22.4, zone = "Tanaris" } } } },
     },
   },
-  { id = 349, name = "Maraudon", kind = "dungeon", size = 5, min = 46, max = 55, zone = "Desolace",
+  { id = 349, name = "Maraudon", kind = "dungeon", size = 5, min = 46, max = 55, zone = "Desolace", pin = { map = 1414, x = 18.02, y = 58.01 },
     bosses = {
       { name = "Noxxion", loot = {}, abilities = { { 21687, "Toxic Volley" }, { 22916, "Uppercut" }, { 21708, "Summon Noxxion's Spawns" } } },
       { name = "Razorlash", loot = {}, abilities = { { 15584, "Cleave" } } },
@@ -334,7 +355,14 @@ ns.JOURNAL = {
       { id = 7066, title = "Seed of Life", level = 51, min = 45, side = "Both", type = "Dungeon", obj = "Seek out Remulos in Moonglade and give him the Seed of Life.", start = { kind = "npc", name = "Zaetar's Spirit" } },
     },
   },
-  { id = 109, name = "Sunken Temple", kind = "dungeon", size = 5, min = 50, max = 60, zone = "Swamp of Sorrows",
+  { name = "Alcaz Prison", kind = "dungeon", size = 5, min = 48, max = 53, zone = "Dustwallow Marsh", new = true, when = "Coming at launch", expected = true, pin = { map = 1414, x = 75.58, y = 62.41 },
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { id = 109, name = "Sunken Temple", kind = "dungeon", size = 5, min = 50, max = 60, zone = "Swamp of Sorrows", pin = { map = 1415, x = 72.37, y = 75.16 },
     bosses = {
       { name = "Atal'alarion", loot = {}, abilities = { { 12887, "Sweeping Slam" }, { 6524, "Ground Tremor" } } },
       { name = "Avatar of Hakkar", loot = {}, abilities = { { 12889, "Curse of Tongues" }, { 6607, "Lash" }, { 12888, "Cause Insanity" } } },
@@ -365,7 +393,7 @@ ns.JOURNAL = {
       { id = 8733, title = "Eranikus, Tyrant of the Dream", level = 60, min = 60, side = "Both", obj = "Travel to the continent of Teldrassil and find Malfurion's agent somewhere outside the walls of Darnassus.", start = { kind = "npc", name = "Malfurion Stormrage" } },
     },
   },
-  { id = 230, name = "Blackrock Depths", kind = "dungeon", size = 5, min = 52, max = 60, zone = "Searing Gorge",
+  { id = 230, name = "Blackrock Depths", kind = "dungeon", size = 5, min = 52, max = 60, zone = "Searing Gorge", pin = { map = 1415, x = 48.89, y = 62.41 },
     bosses = {
       { name = "High Interrogator Gerstahn", loot = {}, abilities = { { 14032, "Shadow Word: Pain" }, { 14033, "Mana Burn" }, { 13704, "Psychic Scream" }, { 12040, "Shadow Shield" } } },
       { name = "Lord Roccor", loot = {}, abilities = { { 13729, "Flame Shock" }, { 13728, "Earth Shock" }, { 6524, "Ground Tremor" } } },
@@ -408,7 +436,7 @@ ns.JOURNAL = {
       { id = 8961, title = "Three Kings of Flame", level = 60, min = 58, side = "Both", type = "Raid", obj = "Gather the Incendicite of Incendius, the Ember of Emberseer and the Cinder of Cynders, along with a Hallowed Brazier, and return them to Bodley inside Blackrock Mountain.", start = { kind = "npc", name = "Bodley", map = 1428, x = 32.3, y = 25.8, zone = "Burning Steppes" }, chain = { { id = 8905, title = "An Earnest Proposition", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8922, title = "A Supernatural Device", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8921, title = "The Ectoplasmic Distiller", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8924, title = "Hunting for Ectoplasm", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8925, title = "A Portable Power Source", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8928, title = "A Shifty Merchant", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8977, title = "Return to Deliana", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8926, title = "Just Compensation", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8929, title = "In Search of Anthion", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8945, title = "Dead Man's Plea", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8946, title = "Proof of Life", level = 60, start = { kind = "npc", name = "Ysida Harmon" } }, { id = 8947, title = "Anthion's Strange Request", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8948, title = "Anthion's Old Friend", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8949, title = "Falrin's Vendetta", level = 60, start = { kind = "npc", name = "Falrin Treeshaper", inside = "Dire Maul" } }, { id = 8950, title = "The Instigator's Enchantment", level = 60, start = { kind = "npc", name = "Falrin Treeshaper", inside = "Dire Maul" } }, { id = 9015, title = "The Challenge", level = 60, start = { kind = "npc", name = "Falrin Treeshaper", inside = "Dire Maul" } }, { id = 8951, title = "Anthion's Parting Words", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8960, title = "Bodley's Unfortunate Fate", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } } } },
     },
   },
-  { id = 429, name = "Dire Maul", kind = "dungeon", size = 5, min = 54, max = 60, zone = "Feralas",
+  { id = 429, name = "Dire Maul", kind = "dungeon", size = 5, min = 54, max = 60, zone = "Feralas", pin = { map = 1414, x = 31.16, y = 68.1 },
     bosses = {
       { name = "Zevrim Thornhoof", loot = {}, abilities = { { 22478, "Intense Pain" }, { 22651, "Sacrifice" } } },
       { name = "Hydrospawn", loot = {}, abilities = { { 22419, "Riptide" }, { 22420, "Submersion" }, { 22421, "Massive Geyser" }, { 22714, "Summon Hydroling" } } },
@@ -470,7 +498,14 @@ ns.JOURNAL = {
       { id = 7703, title = "Unfinished Gordok Business", level = 60, min = 56, side = "Both", type = "Dungeon", obj = "Find the Gauntlet of Gordok Might and return it to Captain Kromcrush in Dire Maul. According to Kromcrush, the \"old timey story\" says that Tortheldrin - a \"creepy\" elf who called himself a prince - stole it from one of the Gordok kings.", start = { kind = "npc", name = "Captain Kromcrush", inside = "Dire Maul" } },
     },
   },
-  { id = 229, name = "Blackrock Spire", kind = "dungeon", size = 5, min = 55, max = 60, zone = "Burning Steppes",
+  { name = "Blackmaw Hold", kind = "dungeon", size = 5, min = 55, max = 60, zone = "Azshara", new = true, when = "Coming at launch", expected = true, pin = { map = 1414, x = 77.82, y = 35.06 },
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { id = 229, name = "Blackrock Spire", kind = "dungeon", size = 5, min = 55, max = 60, zone = "Burning Steppes", pin = { map = 1415, x = 51.23, y = 63.88 },
     bosses = {
       { name = "Highlord Omokk", loot = { { 16670, 16.7 } }, abilities = { { 8269, "Enrage" }, { 10101, "Knock Away" } } },
       { name = "Shadow Hunter Vosh'gajin", loot = { { 16712, 21 } }, abilities = { { 16098, "Curse of Blood" }, { 16708, "Hex" } } },
@@ -504,7 +539,7 @@ ns.JOURNAL = {
       { id = 4903, title = "Warlord's Command", level = 60, min = 55, side = "Horde", type = "Dungeon", obj = "Slay Highlord Omokk, War Master Voone, and Overlord Wyrmthalak. Recover Important Blackrock Documents. Return to Warlord Goretooth in Kargath when the mission has been accomplished.", start = { kind = "item", name = "Warlord Goretooth's Command" } },
     },
   },
-  { id = 289, name = "Scholomance", kind = "dungeon", size = 5, min = 58, max = 60, zone = "Western Plaguelands",
+  { id = 289, name = "Scholomance", kind = "dungeon", size = 5, min = 58, max = 60, zone = "Western Plaguelands", pin = { map = 1415, x = 61.32, y = 26.38 },
     bosses = {
       { name = "Kirtonos", loot = { { 16734, 18.78 } }, abilities = { { 18144, "Swoop" }, { 6016, "Pierce Armor" }, { 12882, "Wing Flap" }, { 8379, "Disarm" }, { 16467, "Kirtonos Transform" }, { 17228, "Shadow Bolt Volley" }, { 12889, "Curse of Tongues" }, { 14515, "Dominate Mind" } } },
       { name = "Jandice Barov", loot = { { 16701, 17 } }, abilities = { { 16098, "Curse of Blood" }, { 8994, "Banish" }, { 17773, "Summon Illusions" }, { 17774, "Spread" } } },
@@ -537,7 +572,14 @@ ns.JOURNAL = {
       { id = 8992, title = "The Right Piece of Lord Valthalak's Amulet", level = 60, min = 58, side = "Both", type = "Dungeon", obj = "Use the Brazier of Beckoning to summon forth the spirit of Kormok and slay him. Return to Bodley inside Blackrock Mountain with the recombined Lord Valthalak's Amulet and the Brazier of Beckoning.", start = { kind = "npc", name = "Bodley", map = 1428, x = 32.3, y = 25.8, zone = "Burning Steppes" }, chain = { { id = 8905, title = "An Earnest Proposition", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8922, title = "A Supernatural Device", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8921, title = "The Ectoplasmic Distiller", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8924, title = "Hunting for Ectoplasm", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8925, title = "A Portable Power Source", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8928, title = "A Shifty Merchant", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8977, title = "Return to Deliana", level = 60, start = { kind = "npc", name = "Mux Manascrambler", map = 1446, x = 52.5, y = 27.2, zone = "Tanaris" } }, { id = 8926, title = "Just Compensation", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8929, title = "In Search of Anthion", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8945, title = "Dead Man's Plea", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8946, title = "Proof of Life", level = 60, start = { kind = "npc", name = "Ysida Harmon" } }, { id = 8947, title = "Anthion's Strange Request", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8948, title = "Anthion's Old Friend", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8949, title = "Falrin's Vendetta", level = 60, start = { kind = "npc", name = "Falrin Treeshaper", inside = "Dire Maul" } }, { id = 8950, title = "The Instigator's Enchantment", level = 60, start = { kind = "npc", name = "Falrin Treeshaper", inside = "Dire Maul" } }, { id = 9015, title = "The Challenge", level = 60, start = { kind = "npc", name = "Falrin Treeshaper", inside = "Dire Maul" } }, { id = 8951, title = "Anthion's Parting Words", level = 60, start = { kind = "npc", name = "Anthion Harmon", map = 1423, x = 26.1, y = 11.3, zone = "Eastern Plaguelands" } }, { id = 8960, title = "Bodley's Unfortunate Fate", level = 60, start = { kind = "npc", name = "Deliana", map = 1455, x = 43.5, y = 52.6, zone = "Ironforge" } }, { id = 8961, title = "Three Kings of Flame", level = 60, start = { kind = "npc", name = "Bodley", map = 1428, x = 32.3, y = 25.8, zone = "Burning Steppes" } }, { id = 8963, title = "Components of Importance", level = 60, start = { kind = "npc", name = "Bodley", map = 1428, x = 32.3, y = 25.8, zone = "Burning Steppes" } }, { id = 8988, title = "More Components of Importance", level = 60, start = { kind = "npc", name = "Bodley", map = 1428, x = 32.3, y = 25.8, zone = "Burning Steppes" } } } },
     },
   },
-  { id = 329, name = "Stratholme", kind = "dungeon", size = 5, min = 58, max = 60, zone = "Eastern Plaguelands",
+  { name = "Shaper's Terrace", kind = "dungeon", size = 5, min = 58, max = 60, zone = "Un'Goro Crater", new = true, when = "Coming at launch", expected = true, pin = { map = 1414, x = 48.58, y = 77.05 },
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { id = 329, name = "Stratholme", kind = "dungeon", size = 5, min = 58, max = 60, zone = "Eastern Plaguelands", pin = { map = 1415, x = 67.64, y = 17.36 },
     bosses = {
       { name = "Hearthsinger Forresten", loot = { { 16682, 20 } }, abilities = { { 16331, "Incorporeal Defense" }, { 16798, "Enchanting Lullaby" }, { 16244, "Demoralizing Shout" }, { 14443, "Multi-Shot" }, { 16100, "Shoot" } } },
       { name = "Timmy the Cruel", loot = { { 16724, 12.35 } }, abilities = { { 12787, "Thrash" }, { 17470, "Ravenous Claw" }, { 8599, "Enrage" } } },
@@ -579,14 +621,39 @@ ns.JOURNAL = {
       { id = 5262, title = "The Truth Comes Crashing Down", level = 60, min = 55, side = "Both", type = "Dungeon", obj = "Take the Head of Balnazzar to Duke Nicholas Zverenhoff in the Eastern Plaguelands.", start = { kind = "item", name = "Head of Balnazzar" }, chain = { { id = 5251, title = "The Archivist", level = 60, start = { kind = "npc", name = "Duke Nicholas Zverenhoff", map = 1423, x = 71.6, y = 50.1, zone = "Eastern Plaguelands" } } } },
     },
   },
-  { id = 3109, name = "Manor Mistmantle", kind = "dungeon", size = 5, zone = "Duskwood", new = true,
+  { id = 3109, name = "Manor Mistmantle", kind = "dungeon", size = 5, zone = "Duskwood", new = true, pin = { map = 1415, x = 45.74, y = 77.06, zone = true },
     bosses = {
     },
     other = {},
     quests = {
     },
   },
-  { id = 409, name = "Molten Core", kind = "raid", size = 40, min = 60, max = 60, zone = "Burning Steppes",
+  { id = 249, name = "Onyxia's Lair", kind = "raid", size = 40, min = 60, max = 60, zone = "Dustwallow Marsh", when = "Opens December 9", pin = { map = 1414, x = 66.9, y = 71.55 },
+    bosses = {
+      { name = "Onyxia", loot = { { 2564, 1.3 }, { 4696, 1.3 }, { 5267, 1.3 }, { 6622, 1.3 }, { 9402, 1.3 }, { 13000, 1.3 }, { 13002, 1.3 }, { 13004, 1.3 }, { 13006, 1.3 }, { 13007, 1.3 }, { 13015, 1.3 }, { 13036, 1.3 }, { 13046, 1.3 }, { 13047, 1.3 }, { 13053, 1.3 }, { 13060, 1.3 }, { 13065, 1.3 }, { 13070, 1.3 }, { 13072, 1.3 }, { 13075, 1.3 }, { 13077, 1.3 }, { 13083, 1.3 }, { 13091, 1.3 }, { 13096, 1.3 }, { 13107, 1.3 }, { 13113, 1.3 }, { 13116, 1.3 }, { 13118, 1.3 }, { 13123, 1.3 }, { 13125, 1.3 }, { 13133, 1.3 }, { 13135, 1.3 }, { 13139, 1.3 }, { 13146, 1.3 } }, abilities = { { 21131, "Breath" }, { 18431, "Spell 18431" }, { 18435, "Flame Breath" }, { 19983, "Cleave" }, { 15847, "Tail Sweep" }, { 18500, "Wing Buffet" }, { 19633, "Knock Away" }, { 18392, "Fireball" }, { 22191, "Heated Ground" }, { 19951, "Pacify Self" }, { 18430, "Dragon Hover" }, { 20171, "Summon Onyxian Whelps" } } },
+    },
+    other = {},
+    quests = {
+      { id = 7635, title = "A Proper String", level = 60, min = 60, side = "Both", classes = { "hunter" }, type = "Raid", obj = "Stoma the Ancient has asked that you bring him a Mature Black Dragon Sinew. Should you find this sinew, return it to Stoma in Felwood.", start = { kind = "npc", name = "Stoma the Ancient" }, rewards = { 18724 }, chain = { { id = 7632, title = "The Ancient Leaf", level = 60, start = { kind = "item", name = "Ancient Petrified Leaf" } } } },
+      { id = 7495, title = "Victory for the Alliance", level = 60, min = 50, side = "Alliance", obj = "Take the Head of Onyxia to Highlord Bolvar Fordragon in Stormwind.", start = { kind = "item", name = "Head of Onyxia", drop = "Onyxia, Onyxia's Lair" } },
+      { id = 7490, title = "Victory for the Horde", level = 60, min = 60, side = "Horde", obj = "Take the Head of Onyxia to Thrall in Orgrimmar.", start = { kind = "item", name = "Head of Onyxia", drop = "Onyxia, Onyxia's Lair" } },
+    },
+  },
+  { name = "Hyjal Summit", kind = "raid", size = 20, min = 60, max = 60, zone = "Mount Hyjal", new = true, bossCount = 13, when = "Opens December 9", pin = { map = 1414, x = 58.9, y = 31.19, zone = true },
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { name = "Barrow Deeps", kind = "raid", size = 10, min = 60, max = 60, new = true, bossCount = 8, when = "Opens December 9",
+    bosses = {
+    },
+    other = {},
+    quests = {
+    },
+  },
+  { id = 409, name = "Molten Core", kind = "raid", size = 40, min = 60, max = 60, zone = "Burning Steppes", when = "Not yet released", later = true,
     bosses = {
       { name = "Lucifron", loot = { { 18879, 3.4 }, { 19147, 3.4 } }, abilities = { { 19702, "Impending Doom" }, { 19703, "Lucifron's Curse" }, { 19460, "Shadow Shock" } } },
       { name = "Magmadar", loot = { { 17073, 20 }, { 18820, 5.5 }, { 18821, 5.5 } }, abilities = { { 19451, "Frenzy" }, { 19408, "Panic" }, { 19411, "Lava Bomb" }, { 19449, "Magma Spit" } } },
@@ -608,18 +675,7 @@ ns.JOURNAL = {
       { id = 6822, title = "The Molten Core", level = 60, min = 57, side = "Both", type = "Raid", obj = "Kill 1 Fire Lord, 1 Molten Giant, 1 Ancient Core Hound and 1 Lava Surger, then return to Duke Hydraxis in Azshara.", start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" }, chain = { { id = 6804, title = "Poisoned Water", level = 56, start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" } }, { id = 6821, title = "Eye of the Emberseer", level = 60, start = { kind = "npc", name = "Duke Hydraxis", map = 1447, x = 79.3, y = 73.7, zone = "Azshara" } } } },
     },
   },
-  { id = 249, name = "Onyxia's Lair", kind = "raid", size = 40, min = 60, max = 60, zone = "Dustwallow Marsh",
-    bosses = {
-      { name = "Onyxia", loot = { { 2564, 1.3 }, { 4696, 1.3 }, { 5267, 1.3 }, { 6622, 1.3 }, { 9402, 1.3 }, { 13000, 1.3 }, { 13002, 1.3 }, { 13004, 1.3 }, { 13006, 1.3 }, { 13007, 1.3 }, { 13015, 1.3 }, { 13036, 1.3 }, { 13046, 1.3 }, { 13047, 1.3 }, { 13053, 1.3 }, { 13060, 1.3 }, { 13065, 1.3 }, { 13070, 1.3 }, { 13072, 1.3 }, { 13075, 1.3 }, { 13077, 1.3 }, { 13083, 1.3 }, { 13091, 1.3 }, { 13096, 1.3 }, { 13107, 1.3 }, { 13113, 1.3 }, { 13116, 1.3 }, { 13118, 1.3 }, { 13123, 1.3 }, { 13125, 1.3 }, { 13133, 1.3 }, { 13135, 1.3 }, { 13139, 1.3 }, { 13146, 1.3 } }, abilities = { { 21131, "Breath" }, { 18431, "Spell 18431" }, { 18435, "Flame Breath" }, { 19983, "Cleave" }, { 15847, "Tail Sweep" }, { 18500, "Wing Buffet" }, { 19633, "Knock Away" }, { 18392, "Fireball" }, { 22191, "Heated Ground" }, { 19951, "Pacify Self" }, { 18430, "Dragon Hover" }, { 20171, "Summon Onyxian Whelps" } } },
-    },
-    other = {},
-    quests = {
-      { id = 7635, title = "A Proper String", level = 60, min = 60, side = "Both", classes = { "hunter" }, type = "Raid", obj = "Stoma the Ancient has asked that you bring him a Mature Black Dragon Sinew. Should you find this sinew, return it to Stoma in Felwood.", start = { kind = "npc", name = "Stoma the Ancient" }, rewards = { 18724 }, chain = { { id = 7632, title = "The Ancient Leaf", level = 60, start = { kind = "item", name = "Ancient Petrified Leaf" } } } },
-      { id = 7495, title = "Victory for the Alliance", level = 60, min = 50, side = "Alliance", obj = "Take the Head of Onyxia to Highlord Bolvar Fordragon in Stormwind.", start = { kind = "item", name = "Head of Onyxia", drop = "Onyxia, Onyxia's Lair" } },
-      { id = 7490, title = "Victory for the Horde", level = 60, min = 60, side = "Horde", obj = "Take the Head of Onyxia to Thrall in Orgrimmar.", start = { kind = "item", name = "Head of Onyxia", drop = "Onyxia, Onyxia's Lair" } },
-    },
-  },
-  { id = 469, name = "Blackwing Lair", kind = "raid", size = 40, min = 60, max = 60, zone = "Burning Steppes",
+  { id = 469, name = "Blackwing Lair", kind = "raid", size = 40, min = 60, max = 60, zone = "Burning Steppes", when = "Not yet released", later = true,
     bosses = {
       { name = "Razorgore the Untamed", loot = { { 19336, 100 }, { 19337, 100 } }, abilities = { { 23023, "Conflagration" }, { 22425, "Fireball Volley" }, { 24375, "War Stomp" }, { 19632, "Cleave" }, { 18943, "Double Attack" }, { 23014, "Possess" }, { 23040, "Warming Flames" } } },
       { name = "Vaelastrasz the Corrupt", loot = { { 19339, 100 }, { 19340, 100 }, { 19371, 100 } }, abilities = { { 18173, "Burning Adrenaline" }, { 23461, "Flame Breath" }, { 23462, "Fire Nova" }, { 19983, "Cleave" }, { 15847, "Tail Sweep" }, { 23513, "Essence of the Red" }, { 23642, "Corruption" }, { 19484, "Majordomo Teleport Visual" } } },
@@ -636,7 +692,7 @@ ns.JOURNAL = {
       { id = 8288, title = "Only One May Rise", level = 60, min = 60, side = "Both", type = "Raid", obj = "Return the Head of the Broodlord Lashlayer to Baristolth of the Shifting Sands at Cenarion Hold in Silithus.", start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" }, chain = { { id = 8286, title = "What Tomorrow Brings", level = 60, start = { kind = "npc", name = "Baristolth of the Shifting Sands", map = 1451, x = 49.5, y = 36.4, zone = "Silithus" } } } },
     },
   },
-  { id = 309, name = "Zul'Gurub", kind = "raid", size = 20, min = 60, max = 60, zone = "Stranglethorn Vale",
+  { id = 309, name = "Zul'Gurub", kind = "raid", size = 20, min = 60, max = 60, zone = "Stranglethorn Vale", when = "Not yet released", later = true,
     bosses = {
       { name = "High Priestess Jeklik", loot = {}, abilities = { { 22911, "Charge" }, { 24210, "Mark of Arlokk" }, { 23918, "Sonic Burst" }, { 23974, "Summon Frenzied Bloodseeker Bats" }, { 22644, "Blood Leech" }, { 12097, "Pierce Armor" }, { 24085, "Transform Visual" }, { 23968, "Throw Liquid Fire" }, { 23966, "Jeklik Transform" }, { 13540, "Green Channeling" }, { 23973, "Root Self" }, { 23954, "Great Heal" } } },
       { name = "High Priest Venoxis", loot = {}, abilities = { { 23859, "Dispel Magic" }, { 23895, "Renew" }, { 23979, "Holy Wrath" }, { 23858, "Holy Nova" }, { 23860, "Holy Fire" }, { 3391, "Thrash" }, { 23849, "Venoxis Transform" }, { 23861, "Poison Cloud" }, { 22413, "Virulent Poison Proc" }, { 23537, "Enrage" } } },
@@ -691,7 +747,7 @@ ns.JOURNAL = {
       { id = 8143, title = "Zandalarian Shadow Talisman", level = 60, min = 60, side = "Both", classes = { "rogue" }, type = "Raid", start = { kind = "npc", name = "Falthir the Sightless", map = 1434, x = 14.1, y = 13.7, zone = "Stranglethorn Vale" }, rewards = { 19616 }, chain = { { id = 8141, title = "Zandalarian Shadow Talisman", level = 60, start = { kind = "npc", name = "Falthir the Sightless", map = 1434, x = 14.1, y = 13.7, zone = "Stranglethorn Vale" } }, { id = 8142, title = "Zandalarian Shadow Talisman", level = 60, start = { kind = "npc", name = "Falthir the Sightless", map = 1434, x = 14.1, y = 13.7, zone = "Stranglethorn Vale" } } } },
     },
   },
-  { id = 509, name = "Ruins of Ahn'Qiraj", kind = "raid", size = 20, min = 60, max = 60, zone = "Silithus",
+  { id = 509, name = "Ruins of Ahn'Qiraj", kind = "raid", size = 20, min = 60, max = 60, zone = "Silithus", when = "Not yet released", later = true,
     bosses = {
       { name = "Kurinnaxx", loot = {}, abilities = { { 26527, "Enrage" }, { 25646, "Mortal Wound" }, { 26524, "Sand Trap" }, { 3391, "Thrash" }, { 25814, "Wide Slash" } } },
       { name = "General Rajaxx", loot = {}, abilities = { { 6713, "Disarm" }, { 25599, "Thundercrash" }, { 20477, "Summon Player" }, { 8269, "Enrage" } } },
@@ -705,7 +761,7 @@ ns.JOURNAL = {
       { id = 8791, title = "The Fall of Ossirian", level = 60, min = 60, side = "Both", type = "Raid", obj = "Deliver the Head of Ossirian the Unscarred to Commander Mar'alith at Cenarion Hold in Silithus.", start = { kind = "item", name = "Head of Ossirian the Unscarred", drop = "Ossirian the Unscarred, Ruins of Ahn'Qiraj" }, rewards = { 21504, 21507, 21505, 21506 } },
     },
   },
-  { id = 531, name = "Ahn'Qiraj Temple", kind = "raid", size = 40, min = 60, max = 60, zone = "Silithus",
+  { id = 531, name = "Ahn'Qiraj Temple", kind = "raid", size = 40, min = 60, max = 60, zone = "Silithus", when = "Not yet released", later = true,
     bosses = {
       { name = "The Prophet Skeram", loot = { { 21700, 18 }, { 21702, 18 }, { 21707, 15 } }, abilities = { { 747, "Summon Images" }, { 26192, "Arcane Explosion" }, { 785, "True Fulfillment" }, { 26194, "Earth Shock" }, { 4801, "Teleport" }, { 26262, "Birth" }, { 794, "Initialize Images" } } },
       { name = "Silithid Royalty", loot = {}, abilities = { { 25807, "Great Heal" }, { 26580, "Fear" }, { 3242, "Ravage" }, { 25808, "Dispel" }, { 25789, "Summon Yauj Brood" }, { 26561, "Berserker Charge" }, { 18670, "Knock Away" }, { 19128, "Knockdown" }, { 25790, "Vengeance" }, { 26350, "Cleave" }, { 25812, "Toxic Volley" }, { 3391, "Thrash" }, { 26590, "Summon Poison Cloud" } } },
@@ -751,7 +807,7 @@ ns.JOURNAL = {
       { id = 8802, title = "The Savior of Kalimdor", level = 60, min = 60, side = "Both", obj = "Take the Eye of C'Thun to Anachronos at the Caverns of Time.", start = { kind = "npc", name = "Caelestrasz", inside = "Ahn'Qiraj Temple" }, rewards = { 21712, 21710, 21709 }, chain = { { id = 8801, title = "C'Thun's Legacy", level = 60, start = { kind = "item", name = "Eye of C'Thun", drop = "C'thun, Ahn'Qiraj Temple" } } } },
     },
   },
-  { id = 533, name = "Naxxramas", kind = "raid", size = 40, min = 60, max = 60,
+  { id = 533, name = "Naxxramas", kind = "raid", size = 40, min = 60, max = 60, when = "Not yet released", later = true,
     bosses = {
       { name = "Anub'Rekhan", loot = { { 22935, 20 }, { 22939, 20 } }, abilities = { { 29103, "Anub'Rekhan's Aura" }, { 29508, "Summon Crypt Guard" }, { 18943, "Double Attack" }, { 29379, "Despawn Crypt Guards" }, { 28785, "Locust Swarm" } } },
       { name = "Grand Widow Faerlina", loot = { { 22940, 20 }, { 22941, 20 }, { 22943, 20 } }, abilities = { { 28798, "Enrage" } } },

@@ -13,7 +13,9 @@ site for WoW Forever. Free, like everything on Gargoyle.
   to them (its data is `Data/Journal.lua`; item and spell names and text come from the
   game), with the drops that are upgrades for your character marked, on item tooltips too.
   The website's gear planner works those out. Its "Show on map" button
-  sets the game's own map pin, only when you click it.
+  sets the game's own map pin, only when you click it. Its Map view shows the game's own
+  maps of Kalimdor and the Eastern Kingdoms (the world map's art, from the game) with a pin
+  on each dungeon and raid entrance.
 - **Damage tooltips** (`addon/Gargoyle_Tooltips`), a separate addon you can choose to install,
   add a breakdown of your spells' damage and healing to their tooltips: base numbers, your
   spell power's share, your talents, crit, and the average per cast, per second and per mana.

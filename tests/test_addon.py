@@ -1647,8 +1647,13 @@ def test_every_spell_of_every_class_has_a_breakdown(token):
 
 JOURNAL = """
 local _, ns = ...
+ns.JOURNAL_MAPS = {
+  { id = 1414, name = "Kalimdor", crop = { 318, 0, 690, 668 } },
+  { id = 1415, name = "Eastern Kingdoms", crop = { 300, 0, 672, 668 } },
+}
 ns.JOURNAL = {
   { id = 36, name = "Deadmines", kind = "dungeon", size = 5, min = 17, max = 26, zone = "Westfall",
+    pin = { map = 1415, x = 28.9, y = 79.6 },
     bosses = {
       { name = "Rhahk'Zor", loot = { { 872, 20 }, { 5187, 80 } }, abilities = { { 6304, "Rhahk'Zor Slam" } } },
       { name = "Edwin VanCleef", loot = { { 5193, 15 }, { 5191, 15 }, { 10399 } }, abilities = {} },
@@ -1672,9 +1677,25 @@ ns.JOURNAL = {
     },
   },
   { id = 33, name = "Shadowfang Keep", kind = "dungeon", size = 5, min = 20, max = 30, zone = "Silverpine Forest",
+    pin = { map = 1415, x = 29.8, y = 32.8 },
     bosses = { { name = "Archmage Arugal", loot = { { 6392, 10 } }, abilities = {} } }, other = {} },
-  { id = 409, name = "Molten Core", kind = "raid", size = 40, min = 60, max = 60, bosses = {}, other = {} },
+  { name = "Alcaz Prison", kind = "dungeon", size = 5, min = 48, max = 53, zone = "Dustwallow Marsh", new = true,
+    when = "Coming at launch", expected = true, pin = { map = 1414, x = 75.6, y = 62.4 }, bosses = {}, other = {} },
+  { name = "Hyjal Summit", kind = "raid", size = 20, min = 60, max = 60, zone = "Mount Hyjal", new = true, bossCount = 13,
+    when = "Opens December 9", pin = { map = 1414, x = 58.9, y = 31.2, zone = true }, bosses = {}, other = {} },
+  { id = 409, name = "Molten Core", kind = "raid", size = 40, min = 60, max = 60, when = "Not yet released", later = true,
+    bosses = {}, other = {} },
 }
+"""
+# The game's world map art: 4x3 tiles of 256 for each continent (what the world map draws with).
+MAP_ART = """C_Map.GetMapArtLayers = function(map)
+  return { { layerWidth = 1002, layerHeight = 668, tileWidth = 256, tileHeight = 256, minScale = 1, maxScale = 1 } }
+end
+C_Map.GetMapArtLayerTextures = function(map, layer)
+  local t = {}
+  for i = 1, 12 do t[i] = map * 100 + i end
+  return t
+end
 """
 ITEMS = """fake.items = { [872] = { "Rockslicer", 3, 135321 }, [5187] = { "Rhahk'Zor's Hammer", 2, 1 },
   [5193] = { "Cape of the Brotherhood", 3, 1 }, [5191] = { "Cruel Barb", 3, 1 }, [10399] = { "Blackened Defias Armor", 3, 1 },
@@ -1742,12 +1763,57 @@ def test_upgrades_are_marked_for_the_character_you_play():
     assert "2 upgrades|r here for Jainamage" in game.texts()
 
 
-def test_there_is_no_map_view():
-    game = journal_game()
-    assert game.fake.button("Bosses") and game.fake.button("Quests (2)") and game.fake.button("Map") is None
-    game.lua.execute('GargoyleDB.journal.view = "map"')  # (saved by 0.8.0): opens on Bosses
+def map_pins(game):
+    """{place name: its pin} on the Map view."""
+    places = game.ns.JOURNAL
+    return {places[w.index].name: w for w in game.fake.widgets.values() if w.kind == "Button" and w.glow and w.index}
+
+
+def test_the_map_view_shows_the_games_maps_with_a_pin_on_each_entrance():
+    game = journal_game(before=MAP_ART)
+    game.click("Map")
+    assert game.db.journal.view == "map"
+    # The game's own art: each continent's 12 tiles (no pictures of our own).
+    tiles = {w.texture for w in game.fake.widgets.values() if w.kind == "Texture" and isinstance(w.texture, int)}
+    assert {141400 + i for i in range(1, 13)} <= tiles and {141500 + i for i in range(1, 13)} <= tiles
+    pins = map_pins(game)
+    assert set(pins) == {"Deadmines", "Shadowfang Keep", "Alcaz Prison", "Hyjal Summit"}  # (Molten Core: not released)
+    assert pins["Deadmines"].glow.shown and not pins["Shadowfang Keep"].glow.shown  # (the one picked)
+    assert pins["Deadmines"].up.shown and not pins["Alcaz Prison"].up.shown  # (upgrades for Jainamage)
+    text = game.texts()
+    assert "Deadmines" in text and "Not on the map yet" not in text and "Raids not released yet aren't on the map." in text
+    # Pointing at a pin names the place.
+    pin = pins["Hyjal Summit"]
+    pin.scripts["OnEnter"](pin)
+    lines = list(game.lua.globals().GameTooltip.lines.values())
+    assert lines[0] == "Hyjal Summit" and "somewhere in Mount Hyjal" in lines[1] and "20 players  ·  13 bosses" in lines
+    assert "Opens December 9" in lines and lines[-1] == "Click to open it."
+    # Pointing at a place in the list lights its pin and shows it beside the map.
+    row = next(w.parent for w in game.fake.widgets.values() if w.kind == "FontString" and w.text == "Shadowfang Keep"
+               and w.parent.kind == "Button" and w.IsVisible(w))
+    row.scripts["OnEnter"](row)
+    assert pins["Shadowfang Keep"].glow.shown and "Level 20-30" in game.texts()
+    row.scripts["OnLeave"](row)
+    assert not pins["Shadowfang Keep"].glow.shown
+    # Clicking a pin opens the place.
+    pin = pins["Alcaz Prison"]
+    pin.scripts["OnClick"](pin)
+    text = game.texts()
+    assert game.db.journal.view == "bosses" and game.db.journal.place == "Alcaz Prison"
+    assert "Level 48-53 (expected)" in text and "Coming at launch" in text and "Its bosses aren't known yet." in text
+
+
+def test_not_yet_released_raids_and_a_game_without_the_map_art():
+    game = journal_game()  # (no map art from the game)
+    text = game.texts()
+    assert "Not yet" in text  # Molten Core in the list
+    click_row(game, "Molten Core")
+    assert "Not yet released" in game.texts()
+    game.click("Map")
+    assert "The game didn't give its map pictures" in game.texts() and len(map_pins(game)) == 4
+    game.lua.execute('GargoyleDB.journal.view = "map"')  # (saved by 0.8.0, when it was taken out: fine now)
     game.ns.Journal.Refresh(game.ns.Journal)
-    assert "Rhahk'Zor" in game.texts()
+    assert "Raids not released yet aren't on the map." in game.texts()
 
 
 def test_the_quests_view_shows_how_to_get_each_quest_and_its_chain():
@@ -1856,7 +1922,8 @@ def test_odd_upgrade_data_is_skipped():
 def test_the_real_journal_data_loads_and_scrolls():
     game = Game(sync_lua(API, {}))
     places = list(game.ns.JOURNAL.values())
-    assert len(places) > 20 and len({p.id for p in places}) == len(places)
+    ids = [p.id for p in places if p.id is not None]
+    assert len(places) > 20 and len(set(ids)) == len(ids) and len(ids) > 25
     game.slash()
     game.click("Dungeons")
     assert "Ragefire Chasm" in game.texts() and "Naxxramas" not in game.texts()
@@ -1867,8 +1934,9 @@ def test_the_real_journal_data_loads_and_scrolls():
     journal = game.ns.Journal
     for i in range(1, len(places) + 1):  # (every view of every place draws)
         journal.PickPlace(i)
-        for view in ("bosses", "quests"):
+        for view in ("bosses", "quests", "map"):
             journal.ShowView(view)
+    assert len(list(game.ns.JOURNAL_MAPS.values())) == 2
 
 
 # ---- The data collector (addon/Gargoyle_Collector) ----
