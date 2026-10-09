@@ -1254,3 +1254,34 @@ def test_installing_and_removing_the_data_collector(tmp_path, game_folder):
                                "collector")["name"] == "Gargoyle_Collector"
     assert addon_install.uninstall(game_folder, addon_install.COLLECTOR) is True
     assert not (addons / "Gargoyle_Collector").exists() and (addons / "Gargoyle" / "Gargoyle.toc").is_file()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the app's one-copy check is Windows' own")
+def test_a_stuck_copy_of_the_app_doesnt_stop_it_opening(tmp_path, monkeypatch):
+    import threading
+
+    import gargoyle_app
+    monkeypatch.setattr(gargoyle_app, "config_folder", lambda: tmp_path)
+    gargoyle_app.already_running(wait=0.3)  # (holds the one-copy mark, so every check below finds a copy running)
+    note = tmp_path / gargoyle_app.SHOW_FILE
+
+    # A copy that answers is asked to show itself, and this one stops.
+    answer = threading.Timer(0.1, lambda: note.unlink())
+    answer.start()
+    assert gargoyle_app.already_running(wait=2) is True
+    answer.join()
+
+    # One that doesn't answer is stuck: the packaged app closes it (never itself) and starts.
+    ran = []
+    monkeypatch.setattr(gargoyle_app.subprocess, "run", lambda args, **kw: ran.append(args))
+    monkeypatch.setattr(gargoyle_app.time, "sleep", lambda s: None)
+    monkeypatch.setattr(gargoyle_app.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(gargoyle_app.sys, "executable", r"C:\Programs\Gargoyle\GargoyleApp.exe")
+    (tmp_path / gargoyle_app.QUIT_FILE).write_text("quit")
+    assert gargoyle_app.already_running(wait=0.3) is False
+    assert ran == [["taskkill", "/F", "/IM", "GargoyleApp.exe", "/FI", f"PID ne {gargoyle_app.os.getpid()}"]]
+    assert not note.exists() and not (tmp_path / gargoyle_app.QUIT_FILE).exists()
+
+    # From source (the program is Python itself) nothing is closed: it says a copy is running.
+    monkeypatch.setattr(gargoyle_app.sys, "frozen", False)
+    assert gargoyle_app.already_running(wait=0.3) is True and len(ran) == 1

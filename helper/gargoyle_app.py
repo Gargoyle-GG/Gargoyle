@@ -11,7 +11,9 @@ The work happens elsewhere: sync.py (syncing), addon_install.py (the addon), ove
 Run from source:  python helper/gargoyle_app.py  (packaged as GargoyleApp.exe by
 helper/build.py). --tray starts it in the tray, as starting with Windows does.
 """
+import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -35,6 +37,7 @@ from version import APP_VERSION, RELEASES
 
 TICK_MS = 5000
 PUMP_MS = 250
+ANSWER_WAIT = 5  # seconds a running copy has to answer "show yourself" before it's taken as stuck
 VERSION_CHECK_SECONDS = 6 * 3600  # how often it asks whether the addon or app has a new version
 VERSION_RETRY_SECONDS = 600  # (sooner after a check that didn't get through, e.g. starting with Windows before the internet is up)
 UPDATE_WAIT_SECONDS = 180  # how long "Update now" waits for the installer to close the app
@@ -1131,8 +1134,12 @@ def take_file(name):
     return True
 
 
-def already_running():
-    """Is the app running already (for this Windows user)? If so it's asked to show itself."""
+def already_running(wait=ANSWER_WAIT):
+    """Is the app running already (for this Windows user)? If so it's asked to show itself.
+
+    A copy that doesn't answer (it takes the note within a second or so) is stuck: running
+    but with no window or tray icon, which would leave the app impossible to open until it
+    was reinstalled (the installer closes it). That copy is closed and this one starts."""
     global _mutex
     if sys.platform != "win32":
         return False
@@ -1145,9 +1152,32 @@ def already_running():
         return False
     try:
         config_folder().mkdir(parents=True, exist_ok=True)
-        (config_folder() / SHOW_FILE).write_text("show")
+        note = config_folder() / SHOW_FILE
+        note.write_text("show")
     except OSError:
-        pass
+        return True
+    for _ in range(int(wait * 10)):
+        if not note.exists():
+            return True  # (it answered: its window is opening)
+        time.sleep(0.1)
+    if not end_stuck_copy():
+        return True
+    take_file(SHOW_FILE)
+    take_file(QUIT_FILE)
+    return False
+
+
+def end_stuck_copy():
+    """Closes other running copies of the packaged app (not this one). Returns whether it could."""
+    if not getattr(sys, "frozen", False):  # (from source the program is Python itself: leave it be)
+        return False
+    exe = Path(sys.executable).name
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", exe, "/FI", f"PID ne {os.getpid()}"],
+                       capture_output=True, timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError):
+        return False
+    time.sleep(0.5)
     return True
 
 
@@ -1185,10 +1215,23 @@ def main():
     root = tk.Tk()
     root.withdraw()  # (shown once it's built, so it doesn't flash white first)
     windows_look(root)
-    app = App(root, hidden="--tray" in sys.argv[1:])
-    if not app.start_hidden:
-        root.deiconify()
-    root.mainloop()
+    app = None
+    try:
+        app = App(root, hidden="--tray" in sys.argv[1:])
+        if not app.start_hidden:
+            root.deiconify()
+        root.mainloop()
+    finally:
+        # The tray icon runs on a thread of its own that would keep the app running, unseen,
+        # if it were left (after a failed start, say), so it's stopped and the app always ends.
+        tray = getattr(app, "tray", None)
+        if tray:
+            try:
+                tray.stop()
+            except Exception:
+                pass
+        if getattr(sys, "frozen", False):
+            os._exit(0)
 
 
 if __name__ == "__main__":
