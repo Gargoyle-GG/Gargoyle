@@ -130,8 +130,15 @@ class Syncer:
         against the release key and the installer `app` (addon_install.app_installer).
         SignatureError if it isn't signed (yet) or is another installer's."""
         manifest, signature_file = signing.APP_MANIFEST
-        body = self.fetch(f"{SIGNED}/{manifest}", 16 * 1024)
-        signature = self.fetch(f"{SIGNED}/{signature_file}", 1024)
+        # The release's own copy first: the public repo's (all apps up to 1.7.1 read only that)
+        # comes through a cache that can hand out the last release's for a few minutes.
+        try:
+            folder = f"{RELEASES}/download/{app['tag']}"
+            body = self.fetch(f"{folder}/{manifest}", 16 * 1024)
+            signature = self.fetch(f"{folder}/{signature_file}", 1024)
+        except requests.RequestException:  # (a release from before they were added there)
+            body = self.fetch(f"{SIGNED}/{manifest}", 16 * 1024)
+            signature = self.fetch(f"{SIGNED}/{signature_file}", 1024)
         signed = signing.verify_app(body, signature, ADDON_SIGNING_KEY)
         if not self_update.matches(signed, app):
             raise signing.SignatureError("the signed installer is another release's")

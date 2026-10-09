@@ -37,8 +37,10 @@ from version import APP_VERSION, RELEASES
 
 TICK_MS = 5000
 PUMP_MS = 250
-ANSWER_WAIT = 5  # seconds a running copy has to answer "show yourself" before it's taken as stuck
+ANSWER_WAIT = 8  # seconds a running copy has to answer "show yourself" before it's taken as stuck
 VERSION_CHECK_SECONDS = 6 * 3600  # how often it asks whether the addon or app has a new version
+UNSIGNED_RETRY_SECONDS = 300  # a new app whose installer isn't signed yet (or not seen signed yet): asked again soon
+UNSIGNED_RETRIES = 12  # (for an hour; then the usual checks)
 VERSION_RETRY_SECONDS = 600  # (sooner after a check that didn't get through, e.g. starting with Windows before the internet is up)
 UPDATE_WAIT_SECONDS = 180  # how long "Update now" waits for the installer to close the app
 SHOW_FILE = "show"  # left in the settings folder by a second copy of the app: "show the window"
@@ -548,9 +550,10 @@ class App:
         # A new app?
         app_update = addon_install.app_update(self.versions, APP_VERSION)
         if app_update:
-            self.banner_text.configure(text=self.updating or
-                                       f"A new version of the Gargoyle app is out ({app_update}). You have {APP_VERSION}.")
             self_updating = installed_app() and self.app_offer is not None and self.app_offer["version"] == app_update
+            soon = " Update now will be ready here in a few minutes." if not self_updating and self.update_coming() else ""
+            self.banner_text.configure(text=self.updating or
+                                       f"A new version of the Gargoyle app is out ({app_update}). You have {APP_VERSION}.{soon}")
             self.update_button.pack_forget()
             self.download_button.pack_forget()
             (self.update_button if self_updating else self.download_button).pack(side="right")
@@ -777,6 +780,7 @@ class App:
         except (addon_install.InstallError, signing.SignatureError, OSError, ValueError) as exc:
             self.updating, self.update_busy = f"The update didn't work: {exc}. The download button gets it instead.", False
             self.app_offer = None
+            self.retry_app_soon()
             put(("log", f"The app update didn't work: {exc}."))
         finally:
             put(("refresh",))
@@ -934,8 +938,27 @@ class App:
         try:
             self.syncer.signed_app(app)
             self.app_offer = app
+            self.quick_retries = 0
         except (signing.SignatureError, addon_install.InstallError, requests.RequestException, ValueError):
-            self.app_offer = None  # (not signed yet: the download button until it is)
+            # Not signed yet (it's signed a few minutes after GitHub builds a release), or
+            # GitHub's copy hadn't caught up: the download button for now, and asked again
+            # in a few minutes rather than hours, so Update now comes back by itself.
+            self.app_offer = None
+            self.retry_app_soon()
+
+    def retry_app_soon(self):
+        """Asks again in a few minutes, for an hour at most (a release that never gets signed
+        then waits for the usual check)."""
+        tries = getattr(self, "quick_retries", 0)
+        if tries >= UNSIGNED_RETRIES:
+            return
+        self.quick_retries = tries + 1
+        self.next_version_check = min(getattr(self, "next_version_check", 0) or float("inf"),
+                                      time.time() + UNSIGNED_RETRY_SECONDS)
+
+    def update_coming(self):
+        """Is Update now on its way (the installed app, still asking whether it's signed)?"""
+        return installed_app() and not self.updating and 0 < getattr(self, "quick_retries", 0) < UNSIGNED_RETRIES
 
     def _update_addon(self, folder, key, install):
         """Installs or updates one addon ("addon": Gargoyle, "tooltips": Damage tooltips,
@@ -1073,6 +1096,7 @@ class App:
             self.update_busy = False
             self.updating = "The update didn't finish. Try again, or get it with the download button."
             self.app_offer = None
+            self.retry_app_soon()
             self.refresh()
         if time.time() - self.refreshed >= 30:
             self.refresh()  # ("5 minutes ago" moves on)

@@ -19,6 +19,7 @@ import startup  # noqa: E402
 import sync_file  # noqa: E402
 import wow_paths  # noqa: E402
 from config import Config  # noqa: E402
+from version import RELEASES, SIGNED  # noqa: E402
 from lua_io import LuaError, read_saved, to_lua  # noqa: E402
 from sync import Syncer, safe_site  # noqa: E402
 
@@ -529,7 +530,8 @@ def test_update_now_runs_only_the_signed_installer(tmp_path, release_key):
 
     def window(changed=None):
         w = types.SimpleNamespace(events=queue.Queue(), config=config, versions=versions, app_offer=None,
-                                  update_busy=True, updating=None)
+                                  update_busy=True, updating=None, next_version_check=time.time() + 6 * 3600)
+        w.retry_app_soon = lambda: gargoyle_app.App.retry_app_soon(w)
         w.syncer = Syncer(config, http=FakeGitHub({**files, **(changed or {})}), log=lambda text: None)
         gargoyle_app.App._check_app(w)
         return w
@@ -556,12 +558,23 @@ def test_update_now_runs_only_the_signed_installer(tmp_path, release_key):
     for changed in ({"app-manifest.json": None}, {"app-manifest.sig": b"junk"},
                     {"app-manifest.sig": base64.b64encode(Ed25519PrivateKey.generate().sign(body))},
                     {"app-manifest.json": another, "app-manifest.sig": release_key(another)}):
-        assert window(changed).app_offer is None  # (None: not there)
+        w = window(changed)
+        assert w.app_offer is None  # (None: not there)
+        assert w.next_version_check <= time.time() + gargoyle_app.UNSIGNED_RETRY_SECONDS  # (asked again in minutes)
+        # ...for an hour at most: a release that's never signed waits for the usual checks.
+        for _ in range(gargoyle_app.UNSIGNED_RETRIES + 2):
+            w.next_version_check = time.time() + 6 * 3600
+            gargoyle_app.App._check_app(w)
+        assert w.next_version_check > time.time() + 3600 and w.quick_retries == gargoyle_app.UNSIGNED_RETRIES
     # Swapped on GitHub after it was signed: downloaded, refused, never run.
     w = window({"GargoyleSetup.exe": b"MZ something else"})
     assert w.app_offer == app
     update(w)
     assert len(launched) == 1 and not w.update_busy and w.app_offer is None and "didn't work" in w.updating
+    assert w.next_version_check <= time.time() + gargoyle_app.UNSIGNED_RETRY_SECONDS
+    # The release's own signed copy is asked for first, then the public repo's.
+    asked = [url for url, _ in window({"app-manifest.json": None}).syncer.http.asked if "app-manifest.json" in url]
+    assert asked == [f"{RELEASES}/download/{versions['tag']}/app-manifest.json", f"{SIGNED}/app-manifest.json"]
 
 
 def test_versions():
@@ -602,7 +615,7 @@ class FakeGitHub:
 
     def request(self, method, url, headers=None, **kw):
         self.asked.append((url, dict(headers or {})))
-        name = url.rsplit("/", 1)[1]
+        name = url.split("?")[0].rsplit("/", 1)[1]
         data, land = self.files.get(name), self.land
 
         class Answer:
@@ -1091,6 +1104,7 @@ def test_the_app_installs_ticked_damage_tooltips(tmp_path, game_folder, release_
                                 app_offer=None)
     app._update_addon = lambda *args: gargoyle_app.App._update_addon(app, *args)
     app._check_app = lambda: gargoyle_app.App._check_app(app)
+    app.retry_app_soon = lambda: gargoyle_app.App.retry_app_soon(app)
 
     def check(tips_version, install=False):
         app.syncer = Syncer(config, http=github(tips_version), log=lambda text: None)
