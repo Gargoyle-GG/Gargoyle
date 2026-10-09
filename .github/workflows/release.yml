@@ -27,7 +27,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+-tips\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+-tips\d+\.\d+\.\d+-col\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

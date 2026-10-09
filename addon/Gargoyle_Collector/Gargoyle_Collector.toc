@@ -2,7 +2,7 @@
 ## Title: Gargoyle Data Collector
 ## Notes: For Gargoyle's helpers: notes what the game shows you about items, spells and talents, so gargoyle.gg can keep its database up to date. Nothing leaves your PC unless you press "Send collected data" in the Gargoyle app. Turn it on or off in Options > AddOns > Gargoyle.
 ## Author: Gargoyle
-## Version: 1.0.0
+## Version: 1.0.1
 ## SavedVariables: GargoyleCollectorDB
 ## OptionalDeps: Gargoyle, Gargoyle_Sync
 ## IconTexture: Interface\AddOns\Gargoyle_Collector\Media\Badge

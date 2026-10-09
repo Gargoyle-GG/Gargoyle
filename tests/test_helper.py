@@ -939,6 +939,18 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
 
 
 
+def test_githubs_release_build_takes_this_releases_tag():
+    """The release workflow refuses tags it doesn't recognise: this release's must be one it does."""
+    here = PROJECT / "public" / ".github" / "workflows" / "release.yml"  # (in the public repo it's at the top)
+    workflow = (here if here.exists() else PROJECT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    pattern = re.search(r"-notmatch '([^']+)'", workflow).group(1)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build", PROJECT / "helper" / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    assert re.match(pattern, build.release_tag()), build.release_tag()
+
+
 def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, release_key):
     import importlib.util
     spec = importlib.util.spec_from_file_location("build", PROJECT / "helper" / "build.py")
