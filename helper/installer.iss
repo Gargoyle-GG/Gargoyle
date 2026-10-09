@@ -34,6 +34,8 @@ DisableReadyPage=yes
 PrivilegesRequired=lowest
 OutputBaseFilename=GargoyleSetup
 SetupIconFile=assets\gargoyle.ico
+; What the app sends and where, shown before installing (not on quiet updates).
+InfoBeforeFile=installer_privacy.txt
 UninstallDisplayIcon={app}\GargoyleApp.exe
 UninstallDisplayName=Gargoyle
 WizardStyle=modern

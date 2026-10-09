@@ -1,0 +1,12 @@
+What the Gargoyle app sends, and where
+
+Gargoyle's app carries things between World of Warcraft and your Gargoyle account, because addons can't go online. It only talks to two places:
+
+- gargoyle.gg, once you link the app to your account: the raid signups you make in game, and the characters you pick in the addon to keep up to date (name, class, race, level, talents, gear, professions). Nothing else from your PC.
+
+- GitHub, every few hours, to check for new versions of the app and the addons and to download them. No account details go with it. You can switch these checks off in the app's Settings.
+
+The app never reads the running game or its memory, and never plays for you.
+
+Privacy policy: https://gargoyle.gg/privacy
+Source code (GPL-3.0): https://github.com/Gargoyle-GG/Gargoyle

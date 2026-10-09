@@ -56,9 +56,42 @@ what you can read here.
 - It never touches the running game, its memory, or any other game files, and it never plays
   for you. The addon only shows things and records your own clicks.
 - It talks to `gargoyle.gg` (your raids and signups) and to GitHub (updates), nothing else.
-  Your account link is a token stored encrypted with Windows' own per-user protection.
+  The update checks can be switched off in its Settings. Your account link is a token stored
+  encrypted with Windows' own per-user protection.
 - It runs in the tray when you close its window, and only starts with Windows if you turn
   that on.
+
+## Uninstalling
+
+Windows' **Settings > Apps** (or Control Panel's Programs and Features): pick **Gargoyle** and
+Uninstall. It asks whether to also remove the app's settings (`%APPDATA%\Gargoyle`). The addons
+are folders in the game's `Interface\AddOns` (`Gargoyle`, `Gargoyle_Tooltips`,
+`Gargoyle_Collector` and `Gargoyle_Sync`): delete them to remove them from the game.
+
+## Privacy
+
+The app sends only what's described above, only to gargoyle.gg (once you link it to your
+account) and to GitHub (to check for and download updates, which you can switch off in its
+Settings). The installer shows this before it installs. The full privacy policy is at
+[gargoyle.gg/privacy](https://gargoyle.gg/privacy); GitHub's own is
+[here](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
+The addons themselves never go online: games don't let addons do that.
+
+## Code signing policy
+
+Windows releases (`GargoyleSetup.exe` and the app inside it) are to be signed through the
+SignPath Foundation, once it accepts the project: free code signing provided by
+[SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+Until then they're unsigned (the addons and app updates are always checked with Gargoyle's own
+release key, as above).
+
+- Only releases built by this repository's [release workflow](.github/workflows/release.yml),
+  from a tagged version of this code, are signed. Nothing built elsewhere is.
+- Committers, reviewers and approvers: the members of the
+  [Gargoyle-GG organization](https://github.com/orgs/Gargoyle-GG/people). Each release is
+  approved by hand before it's signed. Code contributions aren't accepted at the moment;
+  if they are later, every change from outside the team is reviewed first.
+- Privacy: see [Privacy](#privacy) above.
 
 ## Building it yourself
 
@@ -80,5 +113,12 @@ Open an issue here. Security problems: please report them privately (see
 
 ## License
 
-All rights reserved: you're welcome to read the code and use the official releases, but not
-to copy or republish it. See [LICENSE](LICENSE).
+Copyright (C) 2026 Gargoyle.
+
+Free software under the [GNU General Public License, version 3](LICENSE): you may use, study,
+share and change it, and copies or changed versions you pass on must be under the same license,
+with their source code. It comes with no warranty.
+
+Only releases from this repository (or [gargoyle.gg/addon](https://gargoyle.gg/addon)) are
+official. Other copies can't install updates signed with Gargoyle's release key, and the
+official app won't install anything else.

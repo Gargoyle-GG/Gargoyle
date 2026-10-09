@@ -351,6 +351,7 @@ class App:
         page = self.pages["Settings"]
         self.startup_on = tk.BooleanVar(value=startup.enabled())
         self.auto_update = tk.BooleanVar(value=self.config.get("auto_update", True) is not False)
+        self.update_checks = tk.BooleanVar(value=self.config.get("update_checks", True) is not False)
         self.to_tray = tk.BooleanVar(value=self.config.get("close_to_tray", True) is not False)
         label(page, "Gargoyle", font=HEAD, fg=GOLD).pack(anchor="w")
         if startup.available():
@@ -359,6 +360,8 @@ class App:
         self.tray_box = checkbox(page, "Closing the window keeps Gargoyle running in the tray", self.to_tray,
                                  lambda: self.config.set("close_to_tray", self.to_tray.get()))
         self.tray_box.pack(anchor="w", pady=(px(4), 0))
+        checkbox(page, "Check GitHub for new versions of the app and addons (every few hours)", self.update_checks,
+                 self.set_update_checks).pack(anchor="w", pady=(px(4), 0))
         checkbox(page, "Keep the Gargoyle addon up to date", self.auto_update,
                  self.set_auto_update).pack(anchor="w", pady=(px(4), 0))
         self.tooltips_on = tk.BooleanVar(value=self.config.get("tooltips") is True)
@@ -739,6 +742,11 @@ class App:
             self.log(f"Couldn't change starting with Windows ({exc.__class__.__name__}).")
         self.startup_on.set(startup.enabled())
 
+    def set_update_checks(self):
+        self.config.set("update_checks", self.update_checks.get())
+        if self.update_checks.get():
+            self.check_versions()
+
     def set_auto_update(self):
         self.config.set("auto_update", self.auto_update.get())
         if self.auto_update.get():
@@ -885,6 +893,9 @@ class App:
         self.check_versions(install=True)
 
     def check_versions(self, install=False):
+        # Checks switched off in Settings: GitHub is only asked when you click to install.
+        if not install and self.config.get("update_checks", True) is False:
+            return
         if self.checking:
             if install:  # (a check is under way: the install follows it)
                 self.install_wanted = True

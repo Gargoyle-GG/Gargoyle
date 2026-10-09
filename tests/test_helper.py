@@ -1299,3 +1299,22 @@ def test_a_stuck_copy_of_the_app_doesnt_stop_it_opening(tmp_path, monkeypatch):
     # From source (the program is Python itself) nothing is closed: it says a copy is running.
     monkeypatch.setattr(gargoyle_app.sys, "frozen", False)
     assert gargoyle_app.already_running(wait=0.3) is True and len(ran) == 1
+
+
+def test_update_checks_can_be_switched_off(tmp_path, monkeypatch):
+    pytest.importorskip("tkinter")
+    import types
+    import gargoyle_app
+    started = []
+    monkeypatch.setattr(gargoyle_app.threading, "Thread", lambda target, args, daemon: types.SimpleNamespace(
+        start=lambda: started.append(args)))
+    config = Config(tmp_path / "config.json")
+    app = types.SimpleNamespace(config=config, checking=False, _check_versions=None)
+    gargoyle_app.App.check_versions(app)
+    assert started == [(False,)]  # (on unless switched off)
+    config.set("update_checks", False)
+    app.checking = False
+    gargoyle_app.App.check_versions(app)
+    assert started == [(False,)]  # off: GitHub isn't asked on its own...
+    gargoyle_app.App.check_versions(app, install=True)
+    assert started == [(False,), (True,)]  # ...only when you click to install
