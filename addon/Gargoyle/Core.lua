@@ -350,9 +350,19 @@ function ns.CreateOptions()
       or "Damage tooltips aren't loaded (install them from the Gargoyle app's Settings, or turn them on in the AddOns list)",
     function() return tips ~= nil and tips.On() end, function(on) if tips then tips.SetOn(on) end end)
   if not tips then ns.tooltipsBox:Disable() end
+  -- The data collector (Gargoyle_Collector), for Gargoyle's helpers: installed by the app with a
+  -- helper code, so it's only shown when it's there. Its line says what's waiting to be sent.
+  local collector = GargoyleCollector
+  if collector then
+    ns.collectorBox = option("Collect item, spell and talent data for Gargoyle (I'm a helper)", collector.On, collector.SetOn)
+    ns.collectorText = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    ns.collectorText:SetPoint("TOPLEFT", ns.collectorBox, "BOTTOMLEFT", 30, 2)
+    ns.collectorText:SetText(collector.Summary())
+  end
   panel:SetScript("OnShow", function()
     for key, box in pairs(ns.optionBoxes) do box:SetChecked(ns.IsEnabled(key)) end
     for box, get in pairs(more) do box:SetChecked(get()) end
+    if collector then ns.collectorText:SetText(collector.Summary()) end
   end)
   ns.optionsPanel = panel
   -- The options window's API has changed over the years; if this one is missing, the

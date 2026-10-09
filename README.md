@@ -19,6 +19,12 @@ site for WoW Forever. Free, like everything on Gargoyle.
   spell power's share, your talents, crit, and the average per cast, per second and per mana.
   Its data (`Data/<Class>.lua`) is made from the website's spell math. It's turned on or off
   in Gargoyle's options.
+- **The Data Collector** (`addon/Gargoyle_Collector`), only for Gargoyle's helpers, notes what
+  the game shows you about items, spells, talents and trainers, so gargoyle.gg's game data
+  stays up to date. It only reads things you come across (it never runs through item or spell
+  numbers), a few at a time and never in combat, and notes nothing about you or other players
+  but your class. It's installed by the app once a helper types their helper code, and nothing
+  is sent until they click **Send collected data**. It's turned on or off in Gargoyle's options.
 - **The app** (`helper/`) carries things between the game and the website, because addons
   can't go online. It also installs the addons and keeps them up to date.
 
@@ -38,7 +44,12 @@ what you can read here.
   (`Interface\AddOns\Gargoyle_Tooltips`) if you ticked them, from these releases, but only if
   every file matches a manifest signed with Gargoyle's release key, which is kept offline and
   never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking Damage tooltips removes that
-  addon's folder again.
+  addon's folder again. For helpers, it installs the Data Collector
+  (`Interface\AddOns\Gargoyle_Collector`) the same way, and removes it if their helper code is
+  revoked.
+- For helpers, **Send collected data** reads the Data Collector's saved file
+  (`SavedVariables\Gargoyle_Collector.lua`) and sends what it noted to gargoyle.gg. Only then:
+  never on its own.
 - When a new version of the app is out, **Update now** downloads its installer and runs it
   quietly, but only if it's the installer signed with that same release key. The installer
   closes the app, updates it and opens it again, keeping your settings.

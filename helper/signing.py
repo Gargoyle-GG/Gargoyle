@@ -26,8 +26,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MANIFEST = "addon-manifest.json"
 SIGNATURE = "addon-manifest.sig"
-# Each addon's own manifest and signature ("addon": Gargoyle, "tooltips": Gargoyle_Tooltips).
-MANIFESTS = {"addon": (MANIFEST, SIGNATURE), "tooltips": ("tooltips-manifest.json", "tooltips-manifest.sig")}
+# Each addon's own manifest and signature ("addon": Gargoyle, "tooltips": Gargoyle_Tooltips,
+# "collector": Gargoyle_Collector).
+MANIFESTS = {"addon": (MANIFEST, SIGNATURE), "tooltips": ("tooltips-manifest.json", "tooltips-manifest.sig"),
+             "collector": ("collector-manifest.json", "collector-manifest.sig")}
 APP_MANIFEST = ("app-manifest.json", "app-manifest.sig")  # (the app's installer)
 TEXT = {".lua", ".toc", ".xml", ".txt", ".md"}
 

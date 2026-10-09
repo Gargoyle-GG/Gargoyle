@@ -5,8 +5,9 @@ Each release has a versions.json saying what's in it: the release's tag, and the
 and app's versions, file names, sizes and SHA-256. An addon download is checked against
 those before anything is unpacked, every file in it has to sit inside that addon's folder,
 and the old copy is only swapped out once the new one is fully unpacked next to it.
-Nothing but Interface\\AddOns\\Gargoyle and (when it's ticked in the app's Settings)
-Interface\\AddOns\\Gargoyle_Tooltips is touched. A new app is installed by its own installer
+Nothing but Interface\\AddOns\\Gargoyle, (when it's ticked in the app's Settings)
+Interface\\AddOns\\Gargoyle_Tooltips, and (for Gargoyle's helpers, once they've entered a
+helper code) Interface\\AddOns\\Gargoyle_Collector is touched. A new app is installed by its own installer
 (self_update.py).
 
 An addon folder that's a link (a developer's copy linked from elsewhere) is never updated.
@@ -27,7 +28,9 @@ from version import RELEASES
 
 NAME = "Gargoyle"
 TOOLTIPS = "Gargoyle_Tooltips"  # (Gargoyle Damage Tooltips, its own addon, installed if wanted)
-ADDONS = {"addon": NAME, "tooltips": TOOLTIPS}  # (its key in versions.json: its folder)
+COLLECTOR = "Gargoyle_Collector"  # (the Data Collector, for Gargoyle's helpers)
+ADDONS = {"addon": NAME, "tooltips": TOOLTIPS, "collector": COLLECTOR}  # (its key in versions.json: its folder)
+OPTIONAL = {TOOLTIPS, COLLECTOR}  # (the ones the app can take out again)
 MAX_DOWNLOAD = 10 * 1024 * 1024
 MAX_UNPACKED = 20 * 1024 * 1024
 MAX_FILES = 500
@@ -130,7 +133,8 @@ def _file(versions, key, extensions):
 
 def offer(versions, key="addon"):
     """An addon in the latest release ({version, file, size, sha256, url, key, name}), checked,
-    or None. `key`: "addon" (Gargoyle) or "tooltips" (Gargoyle_Tooltips)."""
+    or None. `key`: "addon" (Gargoyle), "tooltips" (Gargoyle_Tooltips) or "collector"
+    (Gargoyle_Collector)."""
     addon = _file(versions, key, (".zip",)) if key in ADDONS else None
     return {**addon, "key": key, "name": ADDONS[key]} if addon and addon["size"] <= MAX_DOWNLOAD else None
 
@@ -262,9 +266,10 @@ def install(game_folder, data, signed, name=NAME):
 
 
 def uninstall(game_folder, name):
-    """Takes an optional addon (Damage tooltips) out of the game again, when it's unticked in
-    the app. Only that addon's own folder, and never a linked one. True if it was there."""
-    if name != TOOLTIPS:
+    """Takes an optional addon (Damage tooltips, the Data Collector) out of the game again, when
+    it's unticked in the app. Only that addon's own folder, and never a linked one. True if it
+    was there."""
+    if name not in OPTIONAL:
         raise InstallError(f"{name[:40]} isn't an optional addon")
     target = addons(game_folder) / name
     if is_linked(target):

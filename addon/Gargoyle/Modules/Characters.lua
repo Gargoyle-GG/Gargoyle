@@ -7,8 +7,11 @@
 -- updates that one after (game_import.py). Characters that aren't picked are never read.
 --
 -- Only the game's ordinary addon functions are used, the ones the character sheet, the
--- talent window and the skills page show. Reading waits a few seconds after a change, and
--- for the end of combat. (Not at logout: by then the game reports no gear.)
+-- talent window and the skills page show. Kept light: nothing at all is watched unless the
+-- character you're playing is picked; a change re-reads only the part it touches (new gear:
+-- the gear); reading waits a few seconds after a change, and for the end of combat; and of
+-- the skills only the professions are kept, so weapon skills going up as you fight don't
+-- count as a change to send. (Not read at logout: by then the game reports no gear.)
 local _, ns = ...
 
 local Characters = {
@@ -21,8 +24,22 @@ ns.Characters = Characters
 local DELAY = 3 -- seconds after a change before reading (gear swaps come in bursts)
 local RETRIES = 3 -- tries when the game hasn't loaded every equipped item's details yet
 local MAX_SKILLS = 80
-local EVENTS = { "PLAYER_ENTERING_WORLD", "PLAYER_EQUIPMENT_CHANGED", "CHARACTER_POINTS_CHANGED", "PLAYER_TALENT_UPDATE",
-  "TRAIT_CONFIG_UPDATED", "ACTIVE_TALENT_GROUP_CHANGED", "PLAYER_LEVEL_UP", "SKILL_LINES_CHANGED", "PLAYER_REGEN_ENABLED" }
+local PARTS = { "talents", "gear", "skills" }
+-- What each change can touch ("all": everything). Only read while the character is picked.
+local EVENTS = {
+  PLAYER_ENTERING_WORLD = "all", PLAYER_LEVEL_UP = "all",
+  PLAYER_EQUIPMENT_CHANGED = "gear",
+  CHARACTER_POINTS_CHANGED = "talents", PLAYER_TALENT_UPDATE = "talents", TRAIT_CONFIG_UPDATED = "talents",
+  ACTIVE_TALENT_GROUP_CHANGED = "talents",
+  SKILL_LINES_CHANGED = "skills",
+}
+-- The professions the website knows. A skill the game says can be unlearned counts too
+-- (that's every profession, in any language), so a new one from Forever isn't missed.
+local PROFESSIONS = {
+  Alchemy = true, Blacksmithing = true, Enchanting = true, Engineering = true, Leatherworking = true, Tailoring = true,
+  Herbalism = true, Mining = true, Skinning = true, Cooking = true, ["First Aid"] = true, Fishing = true,
+}
+local ui = {}
 -- Why the website didn't take a character (results from the app; see game_import.py).
 local PROBLEMS = {
   limit = "not added: your account has as many characters from the game as it can hold",
@@ -97,19 +114,23 @@ local function readGear()
   return #gear > 0 and gear or nil, missing
 end
 
--- Skills with their level (the website keeps only the professions). Nil if a group of
--- skills is folded away on the skills page, so the website keeps what it had.
+-- Professions with their level (all the website uses). Nil if a group of skills is folded
+-- away on the skills page, or none are shown yet, so the website keeps what it had.
 local function readSkills()
   local skills = {}
   if GetNumSkillLines and GetSkillLineInfo then
+    local lines = 0
     for i = 1, GetNumSkillLines() do
-      local name, isHeader, isExpanded, rank = GetSkillLineInfo(i)
+      local name, isHeader, isExpanded, rank, _, _, _, canUnlearn = GetSkillLineInfo(i)
       if isHeader and not isExpanded then return end
-      if type(name) == "string" and not isHeader and type(rank) == "number" and rank > 0 and #skills < MAX_SKILLS then
-        skills[#skills + 1] = { name = name, rank = rank }
+      if type(name) == "string" and not isHeader and type(rank) == "number" and rank > 0 then
+        lines = lines + 1
+        -- (canUnlearn is nil where the game doesn't say: then every skill is kept, as before)
+        local profession = canUnlearn == true or canUnlearn == nil or PROFESSIONS[name]
+        if profession and #skills < MAX_SKILLS then skills[#skills + 1] = { name = name, rank = rank } end
       end
     end
-    return #skills > 0 and skills or nil -- (every character has some skills: none means not loaded)
+    return lines > 0 and skills or nil -- (every character has some skills: none means not loaded)
   elseif GetProfessions and GetProfessionInfo then
     local indexes = { GetProfessions() } -- (with gaps where there's no profession)
     for i = 1, 6 do
@@ -124,9 +145,10 @@ local function readSkills()
   end
 end
 
--- Everything the website uses, as the game shows it now. Each part is read on its own:
--- one that fails is left out (and kept as it was on the website) without stopping the rest.
-function Characters.Read()
+-- Everything the website uses, as the game shows it now (or only the parts asked for, as
+-- { gear = true }). Each part is read on its own: one that fails is left out (and kept as it
+-- was) without stopping the rest.
+function Characters.Read(parts)
   local raceName, raceFile = UnitRace("player")
   local _, classFile = UnitClass("player")
   local level = UnitLevel("player") or 0
@@ -134,13 +156,21 @@ function Characters.Read()
     name = ns.PlayerName(), class = classFile, race = raceFile, race_name = raceName,
     faction = UnitFactionGroup("player"), level = level, at = time(),
   }
-  local ok, talents = pcall(readTalents, level)
-  character.talents = ok and talents or nil
-  local gearOk, gear, missing = pcall(readGear)
-  character.gear = gearOk and gear or nil
-  local skillsOk, skills = pcall(readSkills)
-  character.skills = skillsOk and skills or nil
-  return character, gearOk and missing
+  local missing = false
+  if not parts or parts.talents then
+    local ok, talents = pcall(readTalents, level)
+    character.talents = ok and talents or nil
+  end
+  if not parts or parts.gear then
+    local ok, gear, notLoaded = pcall(readGear)
+    character.gear = ok and gear or nil
+    missing = ok and notLoaded
+  end
+  if not parts or parts.skills then
+    local ok, skills = pcall(readSkills)
+    character.skills = ok and skills or nil
+  end
+  return character, missing
 end
 
 -- ---- Picking ----
@@ -163,25 +193,31 @@ local function same(a, b)
   return true
 end
 
--- Read the character you're playing into GargoyleDB, if it's picked. A part the game didn't
--- show this time stays as it was. If nothing changed, it keeps the time it was last read,
--- so there's nothing new for the app to send.
-function Characters.Save()
+-- Read the character you're playing into GargoyleDB, if it's picked (all of it, or only the
+-- parts asked for). A part not read, or that the game didn't show this time, stays as it
+-- was. If nothing changed, the saved entry is left alone, keeping the time it was last
+-- read, so there's nothing new for the app to send.
+function Characters.Save(parts)
   local key = ns.PlayerKey()
   local entry = Characters.Entry(key)
   if not entry then return end
-  local character, missing = Characters.Read()
+  local character, missing = Characters.Read(parts)
   character.picked = entry.picked
-  for _, part in ipairs({ "talents", "gear", "skills" }) do
+  for _, part in ipairs(PARTS) do
     if character[part] == nil then character[part] = entry[part] end
   end
   local at = character.at
   character.at = entry.at
-  if not (entry.at and same(character, entry)) then character.at = at end
-  GargoyleDB.characters[key] = character
-  if missing and retries < RETRIES and C_Timer then
+  if not (entry.at and same(character, entry)) then
+    character.at = at
+    GargoyleDB.characters[key] = character
+  end
+  -- Items whose details the game hadn't loaded: their gear is read again shortly, a few times.
+  if not missing then
+    retries = 0
+  elseif retries < RETRIES and C_Timer then
     retries = retries + 1
-    C_Timer.After(5, Characters.Save)
+    C_Timer.After(5, function() Characters.Save({ gear = true }) end)
   end
 end
 
@@ -194,6 +230,7 @@ function Characters.Pick(on)
   else
     GargoyleDB.characters[key] = nil
   end
+  Characters.Watch()
 end
 
 -- The website's copy of a picked character (from the app), if it has one.
@@ -249,19 +286,29 @@ end
 
 local watcher = CreateFrame("Frame")
 local scheduled, afterCombat = false, false
+local pending = {} -- the parts to read when the timer's up
 
-local function readSoon()
+local function readPending()
+  scheduled = false
+  if InCombatLockdown and InCombatLockdown() then
+    afterCombat = true -- (kept for after the fight: no work while it lasts)
+    return
+  end
+  local parts = pending
+  pending = {}
+  Characters.Save(parts)
+  if ui.name and ui.name:IsVisible() then Characters:Refresh() end
+end
+
+local function readSoon(part)
+  if part == "all" then
+    for _, p in ipairs(PARTS) do pending[p] = true end
+  elseif part then
+    pending[part] = true
+  end
   if scheduled or not C_Timer then return end
   scheduled = true
-  C_Timer.After(DELAY, function()
-    scheduled = false
-    if InCombatLockdown and InCombatLockdown() then
-      afterCombat = true
-    else
-      Characters.Save()
-      if Characters.Refresh then Characters:Refresh() end
-    end
-  end)
+  C_Timer.After(DELAY, readPending)
 end
 
 watcher:SetScript("OnEvent", function(_, event)
@@ -271,15 +318,24 @@ watcher:SetScript("OnEvent", function(_, event)
       readSoon()
     end
   else
-    readSoon()
+    readSoon(EVENTS[event])
   end
 end)
 
-function Characters:OnEnable()
-  for _, event in ipairs(EVENTS) do
+-- Watches for changes only while the character you're playing is picked (and the feature
+-- is on); otherwise the addon does nothing at all here.
+function Characters.Watch()
+  watcher:UnregisterAllEvents()
+  if not (ns.IsEnabled("characters") and Characters.Entry(ns.PlayerKey())) then return end
+  for event in pairs(EVENTS) do
     pcall(watcher.RegisterEvent, watcher, event) -- (one this version of the game doesn't have is skipped)
   end
-  readSoon()
+  pcall(watcher.RegisterEvent, watcher, "PLAYER_REGEN_ENABLED")
+end
+
+function Characters:OnEnable()
+  Characters.Watch()
+  if Characters.Entry(ns.PlayerKey()) then readSoon("all") end
 end
 
 function Characters:OnDisable()
@@ -289,7 +345,6 @@ end
 -- ---- The tab ----
 
 local ROWS, ROW_HEIGHT = 8, 26
-local ui = {}
 
 local function className(classFile)
   local name = classFile and LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[classFile]

@@ -1,0 +1,9 @@
+{
+ "files": {
+  "Gargoyle_Collector/Collector.lua": "4ed56001ba5aff0e5af7261eae9a1cb53e130cd959aae9255e88228ad7f3fe9a",
+  "Gargoyle_Collector/Gargoyle_Collector.toc": "5f8b3f16c6c647dbb56e6119cb0d00f274b0ba93797717521cc2fdce741a8cc9",
+  "Gargoyle_Collector/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
+ },
+ "tag": "v1.7.0-addon0.8.2-tips1.0.2-col1.0.0",
+ "version": "1.0.0"
+}

@@ -6,12 +6,14 @@
   the characters picked in game whenever the addon has read them again.
 - Fetching: gets your raids from the website and writes them into the Gargoyle_Sync data
   addon, which the game loads the next time you log in or /reload.
+- Helpers' collected data: only when Send collected data is clicked (send_collected; see
+  collected.py), never on its own.
 - Versions: reads which addon and app versions are current from the latest GitHub release,
   and downloads the addon (installed by addon_install.py) and the app's installer
   (self_update.py) from it.
 
-It only ever touches the Gargoyle addon's saved data, the Gargoyle_Sync folder and (when
-installing or updating it) the Gargoyle addon's own folder.
+It only ever touches the Gargoyle addons' saved data (read only), the Gargoyle_Sync folder and
+(when installing or updating them) the Gargoyle addons' own folders.
 """
 import json
 import os
@@ -24,6 +26,7 @@ from urllib.parse import urlsplit
 import requests
 
 import addon_install
+import collected
 import self_update
 import signing
 import sync_file
@@ -63,6 +66,7 @@ class Syncer:
         # signups, raids made and picked characters last read from the game's saved files.
         self.table = None
         self.actions, self.picked, self.new_raids = [], [], []
+        self.collected = {}  # the collector's saved files, as last read: path -> (change time, id, entries)
 
     # ---- Talking to the website ----
 
@@ -155,6 +159,25 @@ class Syncer:
                     raise addon_install.InstallError("the download is bigger than expected")
             return bytes(data)
 
+    def unlock_collector(self, code):
+        """A helper code typed in Settings: True once the website says this account is a
+        helper (the app then installs the collector). ValueError with the website's reason
+        if the code didn't work."""
+        try:
+            answer = self._call("POST", "/api/app/collector/unlock", json={"code": str(code)[:40]})
+        except requests.HTTPError as exc:
+            reason = None
+            try:
+                reason = exc.response.json().get("error")
+            except (ValueError, AttributeError):
+                pass
+            if exc.response is not None and exc.response.status_code == 429:
+                reason = "too many tries: wait an hour and try again"
+            raise ValueError(str(reason or "the website didn't take it")[:200]) from None
+        helper = isinstance(answer, dict) and answer.get("helper") is True
+        self.config.set("helper", helper)
+        return helper
+
     def unlink(self):
         try:
             if self.config.token:
@@ -210,6 +233,72 @@ class Syncer:
             self.table = None
         self.read_saved()
 
+    def read_collected(self):
+        """The collector's saved files: [(file id, entries)], each read again only when the
+        game has rewritten it."""
+        found, now = [], {}
+        for path in collected.files(self.game_folder) if self.game_folder else []:
+            try:
+                stamp = path.stat().st_mtime
+                cached = self.collected.get(str(path))
+                if cached and cached[0] == stamp:
+                    file_id, entries = cached[1], cached[2]
+                else:
+                    file_id, entries = collected.read(path)
+            except (OSError, LuaError) as exc:
+                self.log(f"Couldn't read {path.parent.parent.name}'s collected data ({exc}); trying again next time.")
+                continue
+            now[str(path)] = (stamp, file_id, entries)
+            if file_id:
+                found.append((file_id, entries))
+        self.collected = now
+        return found
+
+    def collected_waiting(self):
+        """What Send collected data would send: {"items": n, ...}."""
+        marks = self.config.get("collected")
+        waiting = []
+        for found in self.read_collected():
+            waiting += collected.waiting(found, marks)
+        return collected.counts(waiting)
+
+    def send_collected(self):
+        """Sends what the collector noted that wasn't sent yet, in batches, and remembers the
+        newest entry sent from each file (the addon clears what was sent at its next login).
+        Returns a short summary. Only for helpers, and only when asked (the Send button)."""
+        if self.config.get("helper") is not True:
+            raise ValueError("this account isn't a helper (type your helper code in Settings first)")
+        stored = self.config.get("collected")
+        marks = {k: v for k, v in (stored if isinstance(stored, dict) else {}).items()
+                 if isinstance(k, str) and collected.FILE_ID.match(k) and isinstance(v, int)}
+        files = self.read_collected()
+        saved = known = sent = 0
+        for file_id, entries in files:
+            waiting = sorted(collected.waiting((file_id, entries), marks), key=lambda e: e["seen"])
+            if not waiting:
+                continue
+            room = collected.MAX_SEND - sent
+            if room <= 0:
+                break
+            waiting = waiting[:room]
+            for batch in collected.batches(waiting):
+                answer = self._call("POST", "/api/app/collected", json={"entries": batch})
+                if isinstance(answer, dict):
+                    saved += answer.get("saved", 0) if isinstance(answer.get("saved"), int) else 0
+                    known += answer.get("known", 0) if isinstance(answer.get("known"), int) else 0
+            sent += len(waiting)
+            marks[file_id] = max(e["seen"] for e in waiting)
+            self.config.set("collected", marks)  # (kept file by file, so a problem halfway loses nothing)
+        # Only the files still there are worth remembering; the addon hears at the next sync.
+        ids = {file_id for file_id, _ in files}
+        self.config.set("collected", {k: v for k, v in marks.items() if k in ids})
+        self.last_refresh = 0
+        if not sent:
+            return "Nothing new to send."
+        more = sum(len(collected.waiting(f, marks)) for f in files) > 0 and sent >= collected.MAX_SEND
+        return (f"Sent {sent:,} entries: {saved:,} new to the website, {known:,} it had already."
+                + (" There's more: send again to carry on." if more else ""))
+
     def send_characters(self, characters):
         """Sends the picked characters the website hasn't had this copy of. Returns what it
         said about each picked one ({key: "saved" / "limit" / ...}) and how many were saved."""
@@ -240,8 +329,9 @@ class Syncer:
         then swapped in, so the game never loads half a file."""
         folder = self.game_folder / "Interface" / "AddOns" / "Gargoyle_Sync"
         folder.mkdir(parents=True, exist_ok=True)
-        self.table = sync_file.sync_table(api, done, imports)
-        files = {"Data.lua": sync_file.sync_lua(api, done, imports)}
+        marks = self.config.get("collected")  # (the collector's entries sent, for it to clear)
+        self.table = sync_file.sync_table(api, done, imports, marks)
+        files = {"Data.lua": sync_file.sync_lua(api, done, imports, marks)}
         interface = wow_paths.interface_version(self.game_folder)
         if interface:
             files["Gargoyle_Sync.toc"] = sync_file.toc(interface)
@@ -302,6 +392,7 @@ class Syncer:
         api = self._call("GET", "/api/app/sync")
         if not isinstance(api, dict):
             raise ValueError("the website's answer didn't make sense")
+        self.config.set("helper", api.get("helper") is True)  # (the Data Collector: for helpers only)
         # What the addon may let go of: everything answered that's still in an outbox.
         waiting = {a["id"] for a in actions} | {r["id"] for r in self.new_raids}
         done = {k: v["result"] for k, v in sent.items() if k in waiting}

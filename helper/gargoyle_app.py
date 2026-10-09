@@ -1,7 +1,9 @@
 """The Gargoyle app's window: link your account, and leave it running (in the tray) while
 you play. It syncs whenever the game saves (on /reload or logout) and every few minutes,
 installs and updates the Gargoyle addon, and shows what's synced: your upcoming raids,
-signups still to send and the characters picked in game.
+signups still to send and the characters picked in game. For Gargoyle's helpers (once they've
+typed their helper code in Settings) it also installs the Data Collector and sends what it
+collected, when they click Send collected data.
 
 The work happens elsewhere: sync.py (syncing), addon_install.py (the addon), overview.py
 (what's shown), startup.py (starting with Windows). This is just the window around them.
@@ -21,6 +23,7 @@ from tkinter import filedialog, messagebox, ttk
 import requests
 
 import addon_install
+import collected
 import overview
 import self_update
 import signing
@@ -214,6 +217,8 @@ class App:
         self.app_offer = None  # a newer app's installer, signed: "Update now"
         self.updating = None  # what "Update now" is doing ("Downloading…"), or why it stopped
         self.update_busy = False
+        self.sending = self.unlocking = False  # (the Data Collector: sending, or checking a helper code)
+        self.collector_counts = None  # what Send collected data would send, as last read
         self.versions = {}
         self.next_version_check = 0
         self.pumps = 0
@@ -356,6 +361,21 @@ class App:
                  "tooltips in game; turn it on or off in game in Gargoyle's options)", self.tooltips_on,
                  self.set_tooltips).pack(anchor="w", pady=(px(4), 0))
 
+        # The Data Collector, for Gargoyle's helpers: a helper code unlocks it (collected.py).
+        label(page, "Data collector (for helpers)", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
+        self.collector_text = label(page, fg=DIM, wraplength=px(740))
+        self.collector_text.pack(anchor="w", fill="x", pady=(px(4), 0))
+        row = tk.Frame(page, bg=PANEL)
+        row.pack(fill="x", pady=(px(4), 0))
+        self.helper_code = tk.StringVar()
+        self.code_entry = tk.Entry(row, textvariable=self.helper_code, width=20, font=FONT, bg=INSET, fg=TEXT,
+                                   insertbackground=TEXT, relief="flat", highlightthickness=1,
+                                   highlightbackground=BORDER_STRONG, highlightcolor=GOLD)
+        self.code_entry.bind("<Return>", lambda e: self.unlock_collector())
+        self.unlock_button = button(row, "Unlock", self.unlock_collector)
+        self.send_button = button(row, "Send collected data", self.send_collected, primary=True)
+        self.collector_widgets = (self.code_entry, self.unlock_button, self.send_button)
+
         label(page, "Game folder", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
         row = tk.Frame(page, bg=PANEL)
         row.pack(fill="x", pady=(px(4), 0))
@@ -424,7 +444,12 @@ class App:
         tips_offer = addon_install.offer(self.versions, "tooltips")
         tips_update = (config.get("tooltips") is True and tips and tips_offer and addon_install.newer(tips_offer["version"], tips)
                        and not addon_install.is_linked(addon_install.addons(folder) / addon_install.TOOLTIPS))
-        with_tips = f" · Damage tooltips {tips}" if tips else ""
+        helper = config.get("helper") is True
+        gatherer = addon_install.installed_version(folder, addon_install.COLLECTOR) if folder else None
+        gatherer_offer = addon_install.offer(self.versions, "collector")
+        gatherer_update = (helper and gatherer and gatherer_offer and addon_install.newer(gatherer_offer["version"], gatherer)
+                           and not addon_install.is_linked(addon_install.addons(folder) / addon_install.COLLECTOR))
+        with_tips = (f" · Damage tooltips {tips}" if tips else "") + (f" · Data Collector {gatherer}" if gatherer else "")
 
         # Account
         user = config.get("user") or "your account"
@@ -454,13 +479,36 @@ class App:
                       ("Install the addon", self.install_addon), primary=True)
         elif linked_folder:
             game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone){with_tips}")
-        elif update or tips_update:
-            out = f"Version {update} is out." if update else f"Damage tooltips {tips_offer['version']} are out."
+        elif update or tips_update or gatherer_update:
+            out = (f"Version {update} is out." if update else f"Damage tooltips {tips_offer['version']} are out."
+                   if tips_update else f"Data Collector {gatherer_offer['version']} is out.")
             game.show("waiting", f"Addon {installed}", self.install_problem or out, ("Update", self.install_addon),
                       primary=True)
         else:
             game.show("ok", f"Addon {installed}", f"Game folder: {folder.name}{with_tips}")
         self.folder_text.configure(text=str(folder) if folder else "Not found yet")
+
+        # The Data Collector (Settings)
+        for widget in self.collector_widgets:
+            widget.pack_forget()
+        if helper:
+            counts = self.collector_counts
+            waiting = collected.describe(counts) if counts is not None else None
+            self.collector_text.configure(text=(
+                "Thank you for helping! In game, the Data Collector notes the items, spells and talents your game shows "
+                "you (turn it on or off in Gargoyle's options). Nothing is sent until you click Send collected data. "
+                + ("Sending…" if self.sending else f"Waiting to send: {waiting}." if waiting else
+                   "What's waiting shows here after the next sync.")
+                + ("" if gatherer else " The addon installs with the next update check.")))
+            self.send_button.configure(state="disabled" if self.sending or not config.token else "normal")
+            self.send_button.pack(side="left")
+        else:
+            self.collector_text.configure(text="Helping keep Gargoyle's game data up to date? Type the helper code you "
+                                               "were given, and the app installs the Data Collector addon."
+                                               if config.token else "Link your account first to use a helper code.")
+            self.unlock_button.configure(state="disabled" if self.unlocking or not config.token else "normal")
+            self.code_entry.pack(side="left", padx=(0, px(8)))
+            self.unlock_button.pack(side="left")
 
         # Last sync
         last = config.get("last_sync")
@@ -607,6 +655,12 @@ class App:
                 self.open()
             elif kind == "sync":
                 self.sync(force=True)
+            elif kind == "collector":  # (this account became a helper, or stopped being one)
+                if rest[0]:
+                    self.helper_code.set("")
+                    self.check_versions()
+                else:
+                    self.remove_collector()
             elif kind == "quit":
                 self.quit()
                 return
@@ -846,6 +900,9 @@ class App:
             # Damage tooltips: when ticked in Settings (and once Gargoyle is there).
             if self.config.get("tooltips") is True and addon_install.installed_version(folder) is not None:
                 self._update_addon(folder, "tooltips", install)
+            # The Data Collector: for helpers (likewise).
+            if self.config.get("helper") is True and addon_install.installed_version(folder) is not None:
+                self._update_addon(folder, "collector", install)
             if install:
                 self.install_problem = None
         except requests.RequestException:
@@ -878,11 +935,11 @@ class App:
             self.app_offer = None  # (not signed yet: the download button until it is)
 
     def _update_addon(self, folder, key, install):
-        """Installs or updates one addon ("addon": Gargoyle, "tooltips": Damage tooltips) if
-        the release has a newer one. True if it did."""
+        """Installs or updates one addon ("addon": Gargoyle, "tooltips": Damage tooltips,
+        "collector": the Data Collector) if the release has a newer one. True if it did."""
         put = self.events.put
         name = addon_install.ADDONS[key]
-        title = "Gargoyle addon" if key == "addon" else "Damage tooltips addon"
+        title = {"addon": "Gargoyle addon", "tooltips": "Damage tooltips addon", "collector": "Data Collector addon"}[key]
         offer = addon_install.offer(self.versions, key)
         current = addon_install.installed_version(folder, name)
         if not offer:
@@ -896,7 +953,8 @@ class App:
         linked = addon_install.is_linked(addon_install.addons(folder) / name)
         auto_off = self.config.get("auto_update", True) is False
         # Without a click: never a linked copy, Gargoyle's first install waits for one, and
-        # updates wait when they're switched off. (Ticked Damage tooltips go in straight away.)
+        # updates wait when they're switched off. (Ticked Damage tooltips, and a helper's Data
+        # Collector, go in straight away.)
         if not install and (linked or (current is None and key == "addon") or (current is not None and auto_off)):
             return False
         signed = self.syncer.signed_addon(offer)  # (Gargoyle's release key signed it, or nothing's installed)
@@ -923,6 +981,79 @@ class App:
                 self.log("Removed the Damage tooltips addon. If the game is open, it's gone after a restart.")
         except addon_install.InstallError as exc:
             self.log(f"Couldn't remove the Damage tooltips addon: {exc}.")
+        self.refresh()
+
+    # ---- The Data Collector (for helpers) ----
+
+    def unlock_collector(self):
+        code = self.helper_code.get().strip()
+        if not self.config.token:
+            self.log("Link your account first, then type your helper code.")
+            return
+        if not code or self.unlocking:
+            return
+        self.unlocking = True
+        self.refresh()
+        threading.Thread(target=self._unlock_collector, args=(code,), daemon=True).start()
+
+    def _unlock_collector(self, code):
+        put = self.events.put
+        try:
+            if self.syncer.unlock_collector(code):
+                put(("log", "Helper code accepted: installing the Data Collector addon. Thank you for helping!"))
+                put(("collector", True))
+        except ValueError as exc:
+            put(("log", f"The helper code didn't work: {exc}."))
+        except Unlinked:
+            self.config.token = None
+            put(("log", "This PC was unlinked from your account. Link it again, then type your helper code."))
+        except requests.RequestException:
+            put(("log", "Couldn't reach gargoyle.gg to check the helper code. Try again in a moment."))
+        finally:
+            self.unlocking = False
+            put(("refresh",))
+
+    def send_collected(self):
+        if self.sending or not self.config.token:
+            return
+        self.sending = True
+        self.refresh()
+        threading.Thread(target=self._send_collected, daemon=True).start()
+
+    def _send_collected(self):
+        put = self.events.put
+        try:
+            put(("log", "Data Collector: " + self.syncer.send_collected()))
+            self.collector_counts = self.syncer.collected_waiting()
+        except ValueError as exc:
+            put(("log", f"Couldn't send the collected data: {exc}."))
+        except Unlinked:
+            self.config.token = None
+            put(("log", "This PC was unlinked from your account. Link it again to send the collected data."))
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            put(("log", "Sent as much as the website takes for now: send the rest in an hour." if status == 429 else
+                 "The website didn't take the collected data (it may have stopped this account being a helper)."
+                 if status == 403 else f"Couldn't send the collected data (the website said {status})."))
+        except requests.RequestException:
+            put(("log", "Couldn't reach gargoyle.gg to send the collected data. Try again in a moment."))
+        finally:
+            self.sending = False
+            put(("refresh",))
+
+    def remove_collector(self):
+        """No longer a helper (the code was revoked): the collector comes out of the game. What
+        it noted stays in the game's saved files, unsent."""
+        folder = self.syncer.game_folder
+        if not folder:
+            return
+        try:
+            if addon_install.uninstall(folder, addon_install.COLLECTOR):
+                self.log("Removed the Data Collector addon: this account isn't a helper any more. "
+                         "If the game is open, it's gone after a restart.")
+        except addon_install.InstallError as exc:
+            self.log(f"Couldn't remove the Data Collector addon: {exc}.")
+        self.collector_counts = None
         self.refresh()
 
     # ---- Syncing ----
@@ -959,9 +1090,15 @@ class App:
 
     def _sync(self):
         try:
+            was_helper = self.config.get("helper") is True
             summary = self.syncer.run()
             self.problem = None
             self.config.set("last_sync", {"at": int(time.time()), "summary": summary})
+            helper = self.config.get("helper") is True
+            if helper != was_helper:
+                self.events.put(("collector", helper))
+            if helper:
+                self.collector_counts = self.syncer.collected_waiting()
         except Unlinked:
             self.config.token = None
             self.events.put(("log", "This PC was unlinked from your account. Link it again to keep syncing."))

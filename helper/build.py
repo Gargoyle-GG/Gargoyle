@@ -1,10 +1,11 @@
-"""Builds a Gargoyle release into dist/: the two addons' zips (Gargoyle, and Gargoyle
-Damage Tooltips, which the app installs when it's ticked), the app's installer, and
+"""Builds a Gargoyle release into dist/: the addons' zips (Gargoyle; Gargoyle Damage
+Tooltips, which the app installs when it's ticked; and the Data Collector, which it installs
+for Gargoyle's helpers once they've entered a helper code), the app's installer, and
 versions.json (what the app reads to find updates). GitHub runs this from the public source
 code for every release (.github/workflows/release.yml), so anyone can see exactly what the
 downloads are made from.
 
-    python helper/build.py --tag v1.4.0-addon0.6.0-tips1.0.0     (everything)
+    python helper/build.py --tag v1.4.0-addon0.6.0-tips1.0.0-col1.0.0     (everything)
     python helper/build.py --addon                               (just the addon zips)
 
 The app is packaged with PyInstaller as a folder with GargoyleApp.exe in it (a single-file
@@ -12,7 +13,7 @@ exe is slower to start and more often mistaken for malware by antivirus programs
 turned into GargoyleSetup.exe by Inno Setup 6 (helper/installer.iss).
 
 A release also needs each addon's manifest and signature in release/ (addon-manifest.json
-and .sig, tooltips-manifest.json and .sig), made and signed with Gargoyle's release key
+and .sig, tooltips-manifest.json and .sig, collector-manifest.json and .sig), made and signed with Gargoyle's release key
 before the release is tagged (helper/signing.py). The build stops unless each manifest is
 exactly the addon it just built and the signature checks out against the key in
 helper/version.py, so a release can't go out with an addon the key didn't sign.
@@ -39,7 +40,8 @@ WORK = ROOT / "build"
 ADDON_ZIP = "Gargoyle-addon.zip"
 SETUP = "GargoyleSetup.exe"
 # The addons in a release: versions.json's key for each, its folder, and its zip.
-ADDONS = {"addon": ("Gargoyle", ADDON_ZIP), "tooltips": ("Gargoyle_Tooltips", "Gargoyle_Tooltips-addon.zip")}
+ADDONS = {"addon": ("Gargoyle", ADDON_ZIP), "tooltips": ("Gargoyle_Tooltips", "Gargoyle_Tooltips-addon.zip"),
+          "collector": ("Gargoyle_Collector", "Gargoyle_Collector-addon.zip")}
 
 VERSION_INFO = """VSVersionInfo(
   ffi=FixedFileInfo(filevers={nums}, prodvers={nums}),
@@ -64,7 +66,7 @@ def app_version():
 
 
 def release_tag():
-    return f"v{app_version()}-addon{addon_version()}-tips{addon_version('tooltips')}"
+    return f"v{app_version()}-addon{addon_version()}-tips{addon_version('tooltips')}-col{addon_version('collector')}"
 
 
 def entry(path, version):

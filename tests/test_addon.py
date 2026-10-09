@@ -12,6 +12,7 @@ from lupa import lua51  # noqa: E402
 PROJECT = Path(__file__).resolve().parent.parent
 ADDON = PROJECT / "addon" / "Gargoyle"
 TOOLTIPS = PROJECT / "addon" / "Gargoyle_Tooltips"
+COLLECTOR = PROJECT / "addon" / "Gargoyle_Collector"
 sys.path.insert(0, str(PROJECT / "helper"))
 from sync_file import sync_lua  # noqa: E402
 
@@ -221,8 +222,9 @@ fake.char = {
               { { "Improved Fireball", 1, 3, 0, 5, 11069 } },
               { { "Improved Frostbolt", 1, 2, 5, 5, 11070 } } },
   -- name, is a heading, unfolded, skill
-  skills = { { "Professions", true, true, 0 }, { "Tailoring", false, true, 300 }, { "Enchanting", false, true, 280 },
-             { "Weapon Skills", true, true, 0 }, { "Staves", false, true, 300 } },
+  -- { name, header, unfolded, rank, can be unlearned } (as GetSkillLineInfo's 1st-4th and 8th)
+  skills = { { "Professions", true, true, 0 }, { "Tailoring", false, true, 300, true }, { "Enchanting", false, true, 280, true },
+             { "Weapon Skills", true, true, 0 }, { "Staves", false, true, 300, false } },
 }
 UnitGUID = function() return fake.char.guid end
 UnitClass = function() return "Mage", "MAGE", 8 end
@@ -329,7 +331,7 @@ end
 GetNumSkillLines = function() return #fake.char.skills end
 GetSkillLineInfo = function(i)
   local s = fake.char.skills[i]
-  return s[1], s[2], s[3], s[4]
+  return s[1], s[2], s[3], s[4], 0, 0, 0, s[5]
 end
 InCombatLockdown = function() return fake.combat == true end
 C_Timer = { After = function(_, fn) table.insert(fake.timers, fn) end }
@@ -420,6 +422,51 @@ Settings = {
 }
 """ % NOW
 
+# What the data collector (addon/Gargoyle_Collector) also reads: the game's version, tooltip
+# data, bags, the spellbook, trainers, vendors and loot windows. fake.asked records every item
+# the game was asked about (it must only ever be ones you came across).
+COLLECTOR_GAME = r"""
+fake.build, fake.asked, fake.bags, fake.book, fake.trainer, fake.merchant, fake.loot = 60001, {}, {}, {}, {}, {}, {}
+fake.spellNames = { [133] = "Fireball", [116] = "Frostbolt", [10] = "Blizzard" }
+GetBuildInfo = function() return "1.16.1", tostring(fake.build), "Oct 1 2026", 11601 end
+debugprofilestop = function() return 0 end
+local itemInfo = C_Item.GetItemInfo
+C_Item.GetItemInfo = function(id) table.insert(fake.asked, id); return itemInfo(id) end
+C_Item.GetItemStats = function() return { ITEM_MOD_STAMINA_SHORT = 10, ITEM_MOD_INTELLECT_SHORT = 7 } end
+C_TooltipInfo = {
+  GetItemByID = function(id)
+    local it = fake.items[id]
+    return it and { id = id, lines = {
+      { leftText = it[1], leftColor = { r = 0.64, g = 0.21, b = 0.93 } },
+      { leftText = "Equip: Restores 5 mana per 5 sec.", leftColor = { r = 0, g = 1, b = 0 } },
+      { leftText = "Requires Level 60", leftColor = { r = 1, g = 0.13, b = 0.13 } },
+      { type = 1, args = { { field = "leftText", stringVal = it.flavor or "\"Shiny.\"" } } } } }
+  end,
+  GetSpellByID = function(id) return { id = id, lines = { { leftText = C_Spell.GetSpellName(id), rightText = "Rank 1" } } } end,
+  GetTrainerService = function(i) return fake.trainer[i] and { id = fake.trainer[i][1] } end,
+}
+local talentName = C_Spell.GetSpellName
+C_Spell.GetSpellName = function(id) return fake.spellNames[id] or talentName(id) end
+C_Spell.GetSpellSubtext = function() return "Rank 1" end
+GetSpellBaseCooldown = function() return 0, 1500 end
+C_Traits.GetTraitDescription = function(entry, rank) return "Rank " .. rank .. " of talent " .. entry end
+C_Container = {
+  GetContainerNumSlots = function(bag) return fake.bags[bag] and 16 or 0 end,
+  GetContainerItemID = function(bag, slot) return fake.bags[bag] and fake.bags[bag][slot] end,
+}
+GetNumSpellTabs = function() return 1 end
+GetSpellTabInfo = function() return "Mage", "icon", 0, #fake.book end
+GetSpellBookItemInfo = function(i) return "SPELL", fake.book[i] end
+GetNumTrainerServices = function() return #fake.trainer end
+GetTrainerServiceInfo = function(i) return fake.trainer[i][2], fake.trainer[i][3], "available" end
+GetTrainerServiceLevelReq = function(i) return fake.trainer[i][4] end
+GetTrainerServiceCost = function(i) return fake.trainer[i][5] end
+GetMerchantNumItems = function() return #fake.merchant end
+GetMerchantItemID = function(i) return fake.merchant[i] end
+GetNumLootItems = function() return #fake.loot end
+GetLootSlotLink = function(i) return "|cff1eff00|Hitem:" .. fake.loot[i] .. "::::::::60:::::|h[Loot]|h|r" end
+"""
+
 API = {  # what /api/app/sync answers (see app_api.py)
     "user": "Jaina", "time": NOW - 600,
     "characters": [
@@ -441,11 +488,13 @@ API = {  # what /api/app/sync answers (see app_api.py)
 
 
 class Game:
-    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None):
+    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None, collector=False):
         self.lua = lua51.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(FAKE_GAME)
         self.fake = self.lua.globals().fake
         self.fake.now = now
+        if collector:
+            self.lua.execute(COLLECTOR_GAME)
         if sync:
             self.lua.execute(sync)
         if saved:
@@ -469,6 +518,13 @@ class Game:
                 if name and not name.startswith("#"):
                     run((TOOLTIPS / name.replace("\\", "/")).read_text(encoding="utf-8"), name, self.tips_ns)
             self.fake.fire("ADDON_LOADED", "Gargoyle_Tooltips")
+        if collector:  # (and the data collector, after Gargoyle too)
+            load = self.lua.eval('function(src, name) local f = assert(loadstring(src, "@" .. name)); f("Gargoyle_Collector", {}) end')
+            toc = (COLLECTOR / "Gargoyle_Collector.toc").read_text(encoding="utf-8").splitlines()
+            for name in (line.strip() for line in toc):
+                if name and not name.startswith("#"):
+                    load((COLLECTOR / name.replace("\\", "/")).read_text(encoding="utf-8"), name)
+            self.fake.fire("ADDON_LOADED", "Gargoyle_Collector")
         self.fake.fire("PLAYER_LOGIN")
 
     @property
@@ -658,7 +714,7 @@ def test_picking_the_character_you_play():
     assert [(t.tab, t.rank, t.name, t.spell) for t in entry.talents.values()] == \
         [(1, 2, "Arcane Subtlety", 11210), (3, 5, "Improved Frostbolt", 11070)]
     assert [(g.slot, g.item, g.enchant) for g in entry.gear.values()] == [(1, 240056, None), (9, 240052, 723), (16, 234571, 723)]
-    assert [(k.name, k.rank) for k in entry.skills.values()] == [("Tailoring", 300), ("Enchanting", 280), ("Staves", 300)]
+    assert [(k.name, k.rank) for k in entry.skills.values()] == [("Tailoring", 300), ("Enchanting", 280)]  # (no weapon skills)
     assert "next time you reload (Reload UI) or log out" in game.printed()
     assert "Waiting to sync: 1 character. Reload or log out to send." in game.texts()
     assert game.fake.button("Stop keeping it up to date") is not None
@@ -705,6 +761,74 @@ def test_parts_the_game_hasnt_loaded_are_left_out():
     assert len(game.db.characters["Player-1-00ABCDEF"].gear) == 1
 
 
+def test_only_picked_characters_are_watched():
+    game = Game(sync_lua(API, {}))
+    watching = lambda: game.lua.eval("#(fake.events.PLAYER_EQUIPMENT_CHANGED or {})")  # noqa: E731
+    assert watching() == 0  # not picked: nothing is watched at all
+    game.slash()
+    game.click("Characters")
+    game.click("Keep it up to date")
+    assert watching() == 1
+    game.click("Stop keeping it up to date")
+    assert watching() == 0
+    game.click("Keep it up to date")
+    game.ns.SetEnabled("characters", False)
+    assert watching() == 0
+    game.ns.SetEnabled("characters", True)
+    assert watching() == 1
+
+
+def test_a_change_reads_only_what_it_touches():
+    saved = 'GargoyleDB = { characters = { ["Player-1-00ABCDEF"] = { picked = %d, at = %d, name = "Jainamage" } } }' % (NOW - 99, NOW - 50)
+    game = Game(sync_lua(API, {}), saved)
+    game.fake.runTimers()
+    game.lua.execute("""
+      fake.reads = {}
+      local gear, talents = GetInventoryItemLink, C_ClassTalents.GetActiveConfigID
+      GetInventoryItemLink = function(...) fake.reads.gear = true; return gear(...) end
+      C_ClassTalents.GetActiveConfigID = function(...) fake.reads.talents = true; return talents(...) end
+    """)
+    game.fake.fire("PLAYER_EQUIPMENT_CHANGED")
+    game.fake.runTimers()
+    assert game.lua.eval("fake.reads.gear == true and fake.reads.talents == nil")
+    # Weapon skills going up aren't a change; a profession going up is.
+    game.fake.now = NOW + 60
+    game.lua.execute("fake.char.skills[5][4] = 301")
+    game.fake.fire("SKILL_LINES_CHANGED")
+    game.fake.runTimers()
+    entry = game.db.characters["Player-1-00ABCDEF"]
+    assert entry.at == NOW and game.lua.eval("fake.reads.talents == nil")
+    game.lua.execute("fake.char.skills[2][4] = 301")
+    game.fake.fire("SKILL_LINES_CHANGED")
+    game.fake.runTimers()
+    assert game.db.characters["Player-1-00ABCDEF"].at == NOW + 60
+    # A game that doesn't say which skills can be unlearned: every skill is kept, as before.
+    game.lua.execute("for _, s in ipairs(fake.char.skills) do s[5] = nil end")
+    game.fake.fire("SKILL_LINES_CHANGED")
+    game.fake.runTimers()
+    assert [k.name for k in game.db.characters["Player-1-00ABCDEF"].skills.values()] == ["Tailoring", "Enchanting", "Staves"]
+
+
+def test_gear_retries_start_over_once_it_loads():
+    game = Game(sync_lua(API, {}))
+    game.lua.execute("fake.char.gear = {}; fake.slotIDs = { [1] = 240056 }; GetInventoryItemID = function(_, s) return fake.slotIDs[s] end")
+    game.slash()
+    game.click("Characters")
+    game.click("Keep it up to date")
+    for _ in range(5):
+        game.fake.runTimers()
+    assert game.db.characters["Player-1-00ABCDEF"].gear is None and len(game.fake.timers) == 0  # gave up after a few
+    game.lua.execute('fake.char.gear = { [1] = "|Hitem:240056:0|h" }')
+    game.fake.fire("PLAYER_EQUIPMENT_CHANGED")
+    game.fake.runTimers()
+    assert len(game.db.characters["Player-1-00ABCDEF"].gear) == 1
+    # Later, an item not loaded again: it's retried again (the count started over).
+    game.lua.execute("fake.char.gear = {}")
+    game.fake.fire("PLAYER_EQUIPMENT_CHANGED")
+    game.fake.runTimers()
+    assert len(game.fake.timers) == 1
+
+
 def test_status_from_the_website_and_stopping():
     saved = ('GargoyleDB = { characters = { ["Player-1-00ABCDEF"] = { picked = %d, at = %d, name = "Jainamage", level = 60, class = "MAGE" },'
              ' ["Player-1-0000BEEF"] = { picked = %d, at = %d, name = "Altie", level = 12, class = "MAGE" },'
@@ -737,7 +861,8 @@ def test_raid_signups_default_to_the_imported_character_you_play():
 
 
 def test_events_the_game_doesnt_have_are_skipped():
-    game = Game(sync_lua(API, {}), 'fake.unknownEvents = { CHARACTER_POINTS_CHANGED = true }')
+    saved = 'fake.unknownEvents = { CHARACTER_POINTS_CHANGED = true }; GargoyleDB = { characters = { ["Player-1-00ABCDEF"] = { picked = 1 } } }'
+    game = Game(sync_lua(API, {}), saved)
     assert game.lua.eval("#fake.events.PLAYER_EQUIPMENT_CHANGED") == 1
     assert game.lua.eval("fake.events.CHARACTER_POINTS_CHANGED") is None
 
@@ -774,10 +899,10 @@ def test_the_addons_own_images_are_there_for_the_game():
     window = (ADDON / "Window.lua").read_text(encoding="utf-8")
     assert re.search(r'local MEDIA = "([^"]+)"', window).group(1) == r"Interface\\AddOns\\Gargoyle\\Media\\"
     images = [ADDON / "Media" / f"{name}.tga" for name in re.findall(r'MEDIA \.\. "(\w+)"', window)]
-    for toc in (ADDON / "Gargoyle.toc", TOOLTIPS / "Gargoyle_Tooltips.toc"):
+    for toc in (ADDON / "Gargoyle.toc", TOOLTIPS / "Gargoyle_Tooltips.toc", COLLECTOR / "Gargoyle_Collector.toc"):
         icon = re.search(r"^## IconTexture: Interface\\AddOns\\(\S+)$", toc.read_text(encoding="utf-8"), re.M).group(1)
         images.append(PROJECT / "addon" / (icon.replace("\\", "/") + ".tga"))
-    assert len(images) == 5
+    assert len(images) == 6
     for image in images:
         data = image.read_bytes()
         kind, (width, height), depth = data[2], struct.unpack("<HH", data[12:16]), data[16]
@@ -1744,3 +1869,213 @@ def test_the_real_journal_data_loads_and_scrolls():
         journal.PickPlace(i)
         for view in ("bosses", "quests"):
             journal.ShowView(view)
+
+
+# ---- The data collector (addon/Gargoyle_Collector) ----
+
+COLLECTOR_ITEMS = """fake.items = { [240056] = { "Fireleaf Circlet", 4, 1 }, [240052] = { "Fireleaf Bindings", 4, 2 },
+  [234571] = { "Grand Marshal's Stave", 4, 3 }, [6948] = { "Hearthstone", 1, 4 }, [5187] = { "Whirlwind Axe", 2, 5 },
+  [872] = { "Rockslicer", 3, 6 } }
+fake.book = { 133, 116 }
+fake.spellText = { [133] = "Hurls a fiery ball." }"""
+
+
+def collector(**kw):
+    kw.setdefault("before", COLLECTOR_ITEMS)
+    return Game(collector=True, **kw)
+
+
+def settle(game, rounds=200):
+    """Lets the game run until the collector has nothing left to do (timers, a step at a time)."""
+    for _ in range(rounds):
+        if not list(game.fake.timers.values()):
+            return
+        game.fake.runTimers()
+    raise AssertionError("still busy")
+
+
+def collected(game):
+    return game.lua.globals().GargoyleCollectorDB
+
+
+def test_the_collector_notes_your_gear_spells_and_talents():
+    game = collector()
+    settle(game)
+    db = collected(game)
+    assert db.v == 1 and len(db.id) >= 10
+    circlet = db["items"][240056]
+    assert (circlet.name, circlet.quality, circlet.ilvl, circlet.required, circlet.slot) == ("Fireleaf Circlet", 4, 30, 25, "INVTYPE_CHEST")
+    assert circlet.seen == NOW and circlet.build == 60001 and circlet.stats.ITEM_MOD_STAMINA_SHORT == 10
+    lines = [(line.left, line.color) for line in circlet.lines.values()]
+    # (the item's own colors are kept; red, which depends on who's looking, isn't)
+    assert lines == [("Fireleaf Circlet", None), ("Equip: Restores 5 mana per 5 sec.", "green"), ("Requires Level 60", None),
+                     ('"Shiny."', None)]
+    assert sorted(db["items"].keys()) == [234571, 240052, 240056]
+    fireball = db.spells[133]
+    assert (fireball.name, fireball.rank, fireball.description, fireball["class"], fireball.gcd) == (
+        "Fireball", "Rank 1", "Hurls a fiery ball.", "MAGE", 1500)
+    assert db.spells[116].description is None
+    tree = db.talents.MAGE
+    assert tree.tree == 500 and len(tree.groups) == 3 and len(tree.nodes) == 4
+    subtlety = [n for n in tree.nodes.values() if n.id == 1001][0]
+    talent = subtlety.talents[1]
+    assert (talent.name, talent.spell, talent.max, list(talent.ranks.values())) == (
+        "Arcane Subtlety", 11210, 2, ["Rank 1 of talent 1001", "Rank 2 of talent 1001"])
+    assert db.spells[11210].name == "Arcane Subtlety"  # (and the talents' spells)
+    assert GargoyleCollectorSummary(game) == "3 items, 6 spells, a talent tree waiting to be sent with the Gargoyle app's Send collected data button."
+
+
+def GargoyleCollectorSummary(game):
+    return game.lua.eval("GargoyleCollector.Summary()")
+
+
+def test_the_collector_only_asks_about_what_you_come_across():
+    game = collector()
+    settle(game)
+    assert sorted(set(game.fake.asked.values())) == [234571, 240052, 240056]
+    asked = len(game.fake.asked)
+    # Bags, a vendor, a loot window and a hovered item: each read once.
+    game.lua.execute("fake.bags[0] = { 6948 }; fake.merchant = { 5187 }; fake.loot = { 872 }")
+    for event in ("BAG_UPDATE_DELAYED", "MERCHANT_SHOW", "LOOT_OPENED"):
+        game.fake.fire(event)
+    game.fake.itemTooltip(240056)  # (noted already: not read again)
+    settle(game)
+    db = collected(game)
+    assert sorted(db["items"].keys()) == [872, 5187, 6948, 234571, 240052, 240056]
+    assert len(game.fake.asked) == asked + 3
+    for event in ("BAG_UPDATE_DELAYED", "MERCHANT_SHOW", "LOOT_OPENED", "PLAYER_EQUIPMENT_CHANGED"):
+        game.fake.fire(event)
+    settle(game)
+    assert len(game.fake.asked) == asked + 3
+
+
+def test_the_collector_waits_for_the_game_to_load_an_item():
+    game = collector(before=COLLECTOR_ITEMS + "; fake.uncached[5187] = true")
+    settle(game)
+    game.lua.execute("fake.merchant = { 5187 }")
+    game.fake.fire("MERCHANT_SHOW")
+    settle(game)
+    assert collected(game)["items"][5187] is None
+    game.fake.loadItems()
+    settle(game)
+    assert collected(game)["items"][5187].name == "Whirlwind Axe"
+
+
+def test_the_collector_reads_a_few_at_a_time_and_never_in_combat():
+    game = collector(before=COLLECTOR_ITEMS + "; fake.combat = true")
+    for _ in range(5):
+        game.fake.runTimers()
+    assert len(game.fake.asked) == 0
+    game.lua.execute("fake.combat = false")
+    game.fake.fire("PLAYER_REGEN_ENABLED")
+    game.fake.runTimers()
+    assert 0 < len(game.fake.asked) <= 6
+    settle(game)
+    assert collected(game)["items"][240056] is not None
+
+
+def test_a_trainer_list_gives_levels_and_costs():
+    game = collector()
+    settle(game)
+    game.lua.execute('fake.trainer = { { 10, "Blizzard", "Rank 1", 20, 1500 } }')
+    game.fake.fire("TRAINER_SHOW")
+    settle(game)
+    db = collected(game)
+    trained = db.trainers[10]
+    assert (trained.name, trained.rank, trained.level, trained.cost, trained["class"]) == ("Blizzard", "Rank 1", 20, 1500, "MAGE")
+    assert db.spells[10].name == "Blizzard"
+
+
+def test_sent_data_is_cleared_and_not_noted_again_until_it_changes():
+    game = collector()
+    settle(game)
+    db = collected(game)
+    saved = "GargoyleCollectorDB = " + lua_table(game, db)
+    # The app sent it all: at the next login it's gone, but isn't noted again.
+    sync = 'GargoyleSync = { version = 1, collected = { ["%s"] = %d } }' % (db.id, NOW)
+    game = collector(saved=saved + "\n" + sync, now=NOW + 100)
+    settle(game)
+    db = collected(game)
+    assert list(db["items"].keys()) == [] and list(db.spells.keys()) == [] and db.talents.MAGE is None
+    assert GargoyleCollectorSummary(game) == "Nothing new to send yet."
+    # A new version of the game: looked at again, and only what changed is kept.
+    saved = "GargoyleCollectorDB = " + lua_table(game, db)
+    game = collector(saved=saved, now=NOW + 200, before=COLLECTOR_ITEMS + """
+        fake.build = 60002
+        fake.items[240056] = { "Fireleaf Circlet", 4, 1, flavor = "New in this patch." }""")
+    settle(game)
+    db = collected(game)
+    assert list(db["items"].keys()) == [240056] and db["items"][240056].build == 60002 and list(db.spells.keys()) == []
+
+
+def lua_table(game, value):
+    """A Lua table written out as the game's saved files have it."""
+    return game.lua.eval("""function(t)
+      local function write(v)
+        if type(v) == "table" then
+          local parts = {}
+          for k, x in pairs(v) do parts[#parts + 1] = "[" .. write(k) .. "] = " .. write(x) end
+          return "{" .. table.concat(parts, ", ") .. "}"
+        elseif type(v) == "string" then return string.format("%q", v)
+        else return tostring(v) end
+      end
+      return write(t)
+    end""")(value)
+
+
+def test_the_collector_stops_when_full_until_its_sent():
+    game = collector(before=COLLECTOR_ITEMS + "; fake.book = {}")
+    game.lua.execute("for id = 1, 3998 do GargoyleCollectorDB.items[900000 + id] = { name = 'x', seen = 1 } end")
+    saved = "GargoyleCollectorDB = " + lua_table(game, collected(game))
+    game = collector(saved=saved, before=COLLECTOR_ITEMS + "; fake.book = {}")
+    settle(game)
+    db = collected(game)
+    assert len(list(db["items"].keys())) == 4000
+    assert GargoyleCollectorSummary(game).startswith("Full: 4000 items")
+    gear = (234571, 240052, 240056)
+    left_out = [i for i in gear if db["items"][i] is None]
+    assert len(left_out) == 1 and db.checked["items"][left_out[0]] is None  # (read again once there's room)
+
+
+def test_the_collector_is_switched_in_gargoyles_options():
+    game = collector()
+    box = game.ns.collectorBox
+    assert box.GetChecked(box) and "waiting to be sent" not in game.ns.collectorText.text
+    box.SetChecked(box, False)
+    box.scripts.OnClick(box)
+    settle(game)
+    assert collected(game).on is False and len(game.fake.asked) == 0
+    game.fake.itemTooltip(5187)
+    settle(game)
+    assert len(game.fake.asked) == 0
+    box.SetChecked(box, True)
+    box.scripts.OnClick(box)
+    settle(game)
+    assert collected(game)["items"][240056] is not None
+    game.ns.optionsPanel.scripts.OnShow(game.ns.optionsPanel)
+    assert "waiting to be sent" in game.ns.collectorText.text
+
+
+def test_gargoyle_without_the_collector_doesnt_mention_it():
+    game = Game()
+    assert game.ns.collectorBox is None and "Collect item" not in game.texts()
+
+
+def test_odd_saved_collector_data_starts_afresh():
+    game = collector(saved='GargoyleCollectorDB = { v = 7, on = false, items = "x" }')
+    db = collected(game)
+    assert db.v == 1 and db.on is False and list(db["items"].keys()) == []
+    game = collector(saved='GargoyleCollectorDB = { v = 1, id = "not hex!", items = { [5] = "x" }, sums = 3 }')
+    settle(game)
+    db = collected(game)
+    assert db.id != "not hex!" and db["items"][5] is None and db["items"][240056] is not None
+
+
+def test_the_talent_tree_is_read_once_the_game_has_loaded_it():
+    game = collector(before=COLLECTOR_ITEMS + "; fake.char.configID = nil")
+    settle(game)
+    assert collected(game).talents.MAGE is None and collected(game).checked.talents.MAGE is None
+    game.lua.execute("fake.char.configID = 77")
+    game.fake.fire("TRAIT_CONFIG_LIST_UPDATED")
+    settle(game)
+    assert len(collected(game).talents.MAGE.nodes) == 4

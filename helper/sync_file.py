@@ -103,13 +103,15 @@ def _strings(table, value_type):
             if isinstance(k, str) and isinstance(v, value_type) and not isinstance(v, bool)}
 
 
-def sync_table(api, done, imports=None):
+def sync_table(api, done, imports=None, collected=None):
     """GargoyleSync from the website's /api/app/sync answer, plus the outbox ids the
     website has answered ({id: "saved" / "stale" / ...}) so the addon can let them go, and
     what the website said about each picked character ({key: "saved" / "limit" / ...}).
     can_make_raids tells the addon this app sends raids made in game, sends_talents that it
     passes on each character's talents for talent plans, and sends_upgrades that it passes on
-    their upgrade picks for the dungeon journal (older ones do none of these)."""
+    their upgrade picks for the dungeon journal (older ones do none of these). `collected`:
+    for helpers, the newest Data Collector entry sent from each of its saved files ({file id:
+    time}), so the collector clears what was sent."""
     api = api if isinstance(api, dict) else {}
     return {
         "version": VERSION,
@@ -123,14 +125,15 @@ def sync_table(api, done, imports=None):
         "done": _strings(done, str),
         "removed": _strings(api.get("removed"), int),
         "imports": _strings(imports, str),
+        "collected": {k: v for k, v in _strings(collected, int).items() if re.fullmatch(r"[0-9a-f]{1,20}", k)},
     }
 
 
-def sync_lua(api, done, imports=None):
+def sync_lua(api, done, imports=None, collected=None):
     """The whole Data.lua file."""
     return ("-- Written by the Gargoyle app from your Gargoyle account. Don't edit: it's replaced\n"
             "-- on every sync. The Gargoyle addon reads it when you log in or /reload.\n"
-            "GargoyleSync = " + to_lua(sync_table(api, done, imports)) + "\n")
+            "GargoyleSync = " + to_lua(sync_table(api, done, imports, collected)) + "\n")
 
 
 def toc(interface):

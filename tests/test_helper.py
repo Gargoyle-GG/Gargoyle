@@ -11,6 +11,7 @@ import requests
 PROJECT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT / "helper"))
 import addon_install  # noqa: E402
+import collected  # noqa: E402
 import overview  # noqa: E402
 import signing  # noqa: E402
 import sync  # noqa: E402
@@ -700,7 +701,8 @@ def test_building_the_addon_zip(tmp_path):
     entry = build.entry(tmp_path / "a" / "Gargoyle-addon.zip", build.addon_version())
     tag = build.release_tag()
     assert addon_install.offer({"tag": tag, "addon": entry})["version"] == build.addon_version()
-    assert tag == f"v{build.app_version()}-addon{build.addon_version()}-tips{build.addon_version('tooltips')}"
+    assert tag == (f"v{build.app_version()}-addon{build.addon_version()}-tips{build.addon_version('tooltips')}"
+                   f"-col{build.addon_version('collector')}")
     # Damage tooltips: their own zip, unpacking as Gargoyle_Tooltips/...
     tips = build.build_addon(tmp_path / "a", "tooltips")
     with zipfile.ZipFile(tips) as z:
@@ -709,6 +711,11 @@ def test_building_the_addon_zip(tmp_path):
         assert all(n.startswith("Gargoyle_Tooltips/") for n in names)
         assert json.loads(build.addon_manifest("t", "tooltips"))["files"] == {
             n: hashlib.sha256(z.read(n)).hexdigest() for n in names}
+    # The Data Collector: likewise, as Gargoyle_Collector/...
+    with zipfile.ZipFile(build.build_addon(tmp_path / "a", "collector")) as z:
+        names = z.namelist()
+        assert "Gargoyle_Collector/Gargoyle_Collector.toc" in names and "Gargoyle_Collector/Collector.lua" in names
+        assert all(n.startswith("Gargoyle_Collector/") for n in names)
 
 
 def test_syncing_needs_the_addon_installed(tmp_path):
@@ -910,6 +917,22 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         monkeypatch.setattr(gargoyle_app, "installed_app", lambda: True)
         app.refresh()
         assert app.update_button.winfo_manager() == "pack" and app.download_button.winfo_manager() == ""
+        # The Data Collector: a helper code to unlock it, then Send (helpers only).
+        assert app.unlock_button.winfo_manager() == "pack" and app.send_button.winfo_manager() == ""
+        assert any("Type the helper code you were given" in t for t in texts(root))
+        app.config.set("helper", True)
+        app.collector_counts = {"items": 12, "spells": 3, "talents": 1, "trainers": 0}
+        app.refresh()
+        assert app.unlock_button.winfo_manager() == "" and app.send_button.winfo_manager() == "pack"
+        assert any("Waiting to send: 12 items, 3 spells and a talent tree." in t for t in texts(root))
+        # No longer a helper: the collector comes out of the game.
+        collector_folder = game_folder / "Interface" / "AddOns" / "Gargoyle_Collector"
+        collector_folder.mkdir()
+        (collector_folder / "Gargoyle_Collector.toc").write_text("## Version: 1.0.0\n")
+        app.config.set("helper", False)
+        app.events.put(("collector", False))
+        app.pump()
+        assert not collector_folder.exists() and "Removed the Data Collector addon" in app.log_box.get("1.0", "end")
     finally:
         root.destroy()
 
@@ -929,12 +952,18 @@ def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, rele
     body = build.addon_manifest(tag)
     (tmp_path / "release" / "addon-manifest.json").write_bytes(body)
     (tmp_path / "release" / "addon-manifest.sig").write_bytes(release_key(body))
-    with pytest.raises(SystemExit, match="No signed tooltips-manifest.json"):  # (both addons are signed)
+    with pytest.raises(SystemExit, match="No signed tooltips-manifest.json"):  # (every addon is signed)
         build.check_signed(tag)
     tips = build.addon_manifest(tag, "tooltips")
     (tmp_path / "release" / "tooltips-manifest.json").write_bytes(tips)
     (tmp_path / "release" / "tooltips-manifest.sig").write_bytes(release_key(tips))
-    assert build.check_signed(tag)["addon"][0] == body and build.check_signed(tag)["tooltips"][0] == tips
+    with pytest.raises(SystemExit, match="No signed collector-manifest.json"):
+        build.check_signed(tag)
+    collector = build.addon_manifest(tag, "collector")
+    (tmp_path / "release" / "collector-manifest.json").write_bytes(collector)
+    (tmp_path / "release" / "collector-manifest.sig").write_bytes(release_key(collector))
+    signed = build.check_signed(tag)
+    assert signed["addon"][0] == body and signed["tooltips"][0] == tips and signed["collector"][0] == collector
     # Each manifest is its own addon's: swapping them doesn't pass.
     (tmp_path / "release" / "tooltips-manifest.json").write_bytes(body)
     (tmp_path / "release" / "tooltips-manifest.sig").write_bytes(release_key(body))
@@ -947,7 +976,7 @@ def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, rele
     assert build.check_signed(tag)["addon"][0] == body
     (tmp_path / "release" / "addon-manifest.json").write_bytes(body)
     with pytest.raises(SystemExit, match="isn't the Gargoyle addon"):
-        build.check_signed("v0.0.1-addon0.0.1-tips0.0.1")
+        build.check_signed("v0.0.1-addon0.0.1-tips0.0.1-col0.0.1")
     (tmp_path / "release" / "addon-manifest.sig").write_bytes(release_key(b"something else"))
     with pytest.raises(SystemExit, match="signature"):
         build.check_signed(tag)
@@ -1075,3 +1104,141 @@ def zip_files(data):
     import zipfile
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         return {n: z.read(n) for n in z.namelist() if not n.endswith("/")}
+
+
+# ---- The Data Collector (helpers only, sent when asked) ----
+
+def test_collected_data_from_saved_files():
+    saved = {"GargoyleCollectorDB": {"v": 1, "id": "ab12", "items": {5: {"name": "Axe", "seen": 9, "build": 3}, "x": {"name": "?"},
+                                                                       6: {"name": "No time"}, 7: "junk"},
+                                     "talents": {"MAGE": {"nodes": [], "seen": 10}, "mage": {"seen": 10}},
+                                     "spells": [{"name": "Listed", "seen": 11}]}}
+    file_id, found = collected.entries(saved)
+    assert file_id == "ab12"
+    assert [(e["kind"], e["key"], e["seen"], e["build"], e["data"]) for e in found] == [
+        ("items", 5, 9, 3, {"name": "Axe"}), ("spells", 1, 11, None, {"name": "Listed"}), ("talents", "MAGE", 10, None, {"nodes": []})]
+    assert collected.entries({"GargoyleCollectorDB": {"v": 2, "id": "ab"}}) == (None, [])
+    assert collected.entries({"GargoyleCollectorDB": {"v": 1, "id": "../x"}}) == (None, [])
+    assert [e["key"] for e in collected.waiting((file_id, found), {"ab12": 10})] == [1]
+    assert collected.describe(collected.counts(found)) == "1 item, 1 spell and a talent tree"
+    assert collected.describe({"items": 1200, "trainers": 2}) == "1,200 items and 2 spells"
+    assert collected.describe({}) == "nothing"
+    big = [{"kind": "items", "key": i, "build": 1, "seen": 1, "data": {"name": "x" * 1000}} for i in range(1, 400)]
+    sizes = [len(b) for b in collected.batches(big)]
+    assert sum(sizes) == 399 and max(sizes) < 400 and len(sizes) > 2
+    assert all(len(__import__("json").dumps(b)) < 200 * 1024 for b in collected.batches(big))
+    assert list(collected.batches([{"kind": "items", "key": 1, "build": 1, "seen": 1, "data": {"x": "y" * 300000}}])) == []
+
+
+def test_a_helper_sends_what_the_collector_noted_and_it_clears(tmp_path, game_folder):
+    """The whole trip: the collector addon notes things in game, the game saves them, the
+    helper clicks Send, the website gets them, and the addon clears them at the next login."""
+    from test_addon import NOW, collector as collector_game, settle
+    game = collector_game()
+    settle(game)
+    game.lua.execute(SERIALIZE)
+    saved_text = "GargoyleCollectorDB = " + game.lua.eval("serialize(GargoyleCollectorDB)") + "\n"
+    file_id = game.lua.eval("GargoyleCollectorDB.id")
+    (game_folder / "WTF" / "Account" / "123#1" / "SavedVariables" / "Gargoyle_Collector.lua").write_text(saved_text)
+    calls, helper = [], {"on": False}
+
+    class Answer:
+        status_code = 200
+
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+        def raise_for_status(self):
+            pass
+
+    class Http:
+        def request(self, method, url, headers=None, timeout=None, json=None):
+            calls.append((url.rsplit("/", 1)[1], json))
+            if url.endswith("/api/app/collected"):
+                return Answer({"saved": len(json["entries"]), "known": 0, "skipped": 0})
+            return Answer({"user": "A", "time": 1, "guilds": [], "helper": helper["on"]})
+
+    config = Config(tmp_path / "config.json")
+    config.data.update(site="https://gargoyle.gg", game_folder=str(game_folder))
+    config.token = "t"
+    syncer = Syncer(config, http=Http(), log=lambda text: None)
+    syncer.run()
+    with pytest.raises(ValueError, match="isn't a helper"):  # (only helpers send, and only when asked)
+        syncer.send_collected()
+    assert [c[0] for c in calls] == ["sync"]
+    helper["on"] = True
+    syncer.run()
+    assert config.get("helper") is True and [c[0] for c in calls] == ["sync", "sync"]  # (a sync sends none of it)
+    assert syncer.collected_waiting() == {"items": 3, "spells": 6, "talents": 1, "trainers": 0}
+    assert syncer.send_collected() == "Sent 10 entries: 10 new to the website, 0 it had already."
+    sent = [e for name, body in calls if name == "collected" for e in body["entries"]]
+    assert sorted({e["kind"] for e in sent}) == ["items", "spells", "talents"] and len(sent) == 10
+    assert all(set(e) == {"kind", "key", "build", "data"} and "seen" not in e["data"] for e in sent)
+    assert config.get("collected") == {file_id: NOW}
+    assert syncer.collected_waiting() == {"items": 0, "spells": 0, "talents": 0, "trainers": 0}
+    assert syncer.send_collected() == "Nothing new to send."
+    # The next sync tells the addon, which clears what was sent at the next login.
+    syncer.run()
+    data = (game_folder / "Interface" / "AddOns" / "Gargoyle_Sync" / "Data.lua").read_text(encoding="utf-8")
+    assert load_in_lua(data).GargoyleSync.collected[file_id] == NOW
+    game = collector_game(saved=saved_text + data, now=NOW + 300)
+    settle(game)
+    db = game.lua.globals().GargoyleCollectorDB
+    assert list(db["items"].keys()) == [] and list(db.spells.keys()) == [] and db.talents.MAGE is None
+
+
+def test_a_helper_code_in_the_app(tmp_path, game_folder):
+    class Answer:
+        def __init__(self, status, data):
+            self.status_code, self.data = status, data
+
+        def json(self):
+            return self.data
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(response=self)
+
+    answers = []
+
+    class Http:
+        def request(self, method, url, headers=None, timeout=None, json=None):
+            assert url.endswith("/api/app/collector/unlock") and headers["Authorization"] == "Bearer t"
+            return answers.pop(0)
+
+    config = Config(tmp_path / "config.json")
+    config.data.update(site="https://gargoyle.gg", game_folder=str(game_folder))
+    config.token = "t"
+    syncer = Syncer(config, http=Http(), log=lambda text: None)
+    answers.append(Answer(400, {"helper": False, "error": "That helper code didn't work."}))
+    with pytest.raises(ValueError, match="That helper code didn't work"):
+        syncer.unlock_collector("AAAA-BBBB-CCCC")
+    answers.append(Answer(429, {}))
+    with pytest.raises(ValueError, match="too many tries"):
+        syncer.unlock_collector("AAAA-BBBB-CCCC")
+    assert config.get("helper") is None
+    answers.append(Answer(200, {"helper": True}))
+    assert syncer.unlock_collector("abcd efgh jkmn") is True and config.get("helper") is True
+
+
+def test_installing_and_removing_the_data_collector(tmp_path, game_folder):
+    import io
+    import zipfile
+    folder = PROJECT / "addon" / "Gargoyle_Collector"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as z:
+        for path in sorted(folder.rglob("*")):
+            if path.is_file():
+                z.writestr("Gargoyle_Collector/" + path.relative_to(folder).as_posix(), path.read_bytes())
+    data = buffer.getvalue()
+    addons = game_folder / "Interface" / "AddOns"
+    version = addon_install.install(game_folder, data, signed_for(data, "1.0.0"), addon_install.COLLECTOR)
+    assert version == addon_install.installed_version(game_folder, addon_install.COLLECTOR)
+    assert (addons / "Gargoyle_Collector" / "Collector.lua").is_file()
+    assert addon_install.offer({"tag": "t1", "collector": offer_for(data, "1.0.0", "Gargoyle_Collector-addon.zip")},
+                               "collector")["name"] == "Gargoyle_Collector"
+    assert addon_install.uninstall(game_folder, addon_install.COLLECTOR) is True
+    assert not (addons / "Gargoyle_Collector").exists() and (addons / "Gargoyle" / "Gargoyle.toc").is_file()

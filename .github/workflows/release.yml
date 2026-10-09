@@ -1,5 +1,5 @@
 # Builds a release from this repo's code whenever a version tag (v...) is pushed, and posts
-# the installer, the two addon zips (Gargoyle and Gargoyle Damage Tooltips), their signed
+# the installer, the addon zips (Gargoyle, Gargoyle Damage Tooltips, Gargoyle Data Collector), their signed
 # manifests and versions.json (what the app reads to find updates) as a GitHub release.
 # Everything in a release is built here, in the open, from the tagged code. The build stops
 # unless each addon matches its manifest signed with Gargoyle's release key
@@ -64,5 +64,6 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$env:TAG" dist/GargoyleSetup.exe dist/Gargoyle-addon.zip dist/Gargoyle_Tooltips-addon.zip `
-            dist/versions.json dist/addon-manifest.json dist/addon-manifest.sig dist/tooltips-manifest.json `
-            dist/tooltips-manifest.sig --title "Gargoyle $env:TAG" --generate-notes --verify-tag
+            dist/Gargoyle_Collector-addon.zip dist/versions.json dist/addon-manifest.json dist/addon-manifest.sig `
+            dist/tooltips-manifest.json dist/tooltips-manifest.sig dist/collector-manifest.json dist/collector-manifest.sig `
+            --title "Gargoyle $env:TAG" --generate-notes --verify-tag

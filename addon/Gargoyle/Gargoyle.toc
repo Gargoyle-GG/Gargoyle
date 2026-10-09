@@ -2,7 +2,7 @@
 ## Title: Gargoyle
 ## Notes: Your guild's raids and signups in game (on the game's calendar too, with a heads-up about new raids and a reminder before raids you haven't signed up for), new raids for officers, your characters kept up to date on your Gargoyle account, talent plans: the game's talent window marks the talents a build from your account still wants, and a dungeon journal: every dungeon and raid's bosses, loot and abilities, with the drops that are upgrades for your character marked. Open it with the minimap button or /gargoyle. Each feature can be turned on or off in Options > AddOns > Gargoyle.
 ## Author: Gargoyle
-## Version: 0.8.1
+## Version: 0.8.2
 ## SavedVariables: GargoyleDB
 ## OptionalDeps: Gargoyle_Sync
 ## IconTexture: Interface\AddOns\Gargoyle\Media\Badge
