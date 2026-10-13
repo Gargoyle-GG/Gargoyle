@@ -3,19 +3,28 @@
 The in-game addon and the desktop app for [Gargoyle](https://gargoyle.gg), the companion
 site for WoW Forever. Free, like everything on Gargoyle.
 
-- **The addon** (`addon/Gargoyle`) shows your guild's upcoming raids in game (and marks them on
-  the game's calendar), who's signed up, and lets you sign up (Coming / Tentative / Can't come)
-  without leaving WoW. Guild officers can make new raids in game. It can also keep the
-  characters you pick up to date on your Gargoyle account, and follow a talent build from
+- **The addon** (`addon/Gargoyle`, the core) shows your guild's upcoming raids in game (and
+  marks them on the game's calendar), who's signed up, and lets you sign up (Coming / Tentative /
+  Can't come) without leaving WoW. Guild officers can make new raids in game. It can also keep
+  the characters you pick up to date on your Gargoyle account, and follow a talent build from
   your account: the game's talent window marks the talents it still wants (talent plans).
-  You still pick every talent yourself. Its Dungeons tab is a dungeon journal: every
-  dungeon and raid's bosses, loot and abilities, and quests with the chains that lead
-  to them (its data is `Data/Journal.lua`; item and spell names and text come from the
-  game), with the drops that are upgrades for your character marked, on item tooltips too.
-  The website's gear planner works those out. Its "Show on map" button
-  sets the game's own map pin, only when you click it. Its Map view shows the game's own
-  maps of Kalimdor and the Eastern Kingdoms (the world map's art, from the game) with a pin
-  on each dungeon and raid entrance.
+  You still pick every talent yourself. Item tooltips anywhere in the game say when an item is
+  an upgrade for your character (the website's gear planner works those out) and when it's on
+  your wishlist.
+- **Dungeons** (`addon/Gargoyle_Dungeons`), a module addon (it needs the core), is a dungeon
+  journal: every dungeon and raid's bosses, loot and abilities, and quests with the chains
+  that lead to them (its data is `Data/Journal.lua`; item and spell names and text come from
+  the game), with the drops that are upgrades for your character marked. Its "Show on map"
+  button sets the game's own map pin, only when you click it. Its Map view shows the game's
+  own maps of Kalimdor and the Eastern Kingdoms (the world map's art, from the game) with a
+  pin on each dungeon and raid entrance.
+- **Loot** (`addon/Gargoyle_Loot`), another module addon, lists every item in the game now and
+  where it comes from: dungeon and raid drops, crafting, vendors and reputation, and item sets
+  (its data is `Data/Loot.lua`). Search them all, filter by slot, type, what you can use and
+  your level, see which are upgrades for your character, and star the ones you want for your
+  wishlist, which is on your Gargoyle account too. Ctrl-click an item to try it on in the
+  game's own dressing room, Shift-click to link it in your chat box, as in your bags: only
+  when you click.
 - **Damage tooltips** (`addon/Gargoyle_Tooltips`), a separate addon you can choose to install,
   add a breakdown of your spells' damage and healing to their tooltips: base numbers, your
   spell power's share, your talents, crit, and the average per cast, per second and per mana.
@@ -38,15 +47,16 @@ what you can read here.
 ## What the app does and doesn't do
 
 - It reads the Gargoyle addon's own saved file (`WTF\Account\...\SavedVariables\Gargoyle.lua`)
-  after you `/reload` or log out, and sends the signups and raids you made in game and the
-  characters you picked to your Gargoyle account.
+  after you `/reload` or log out, and sends the signups, raids and wishlist stars you made in
+  game and the characters you picked to your Gargoyle account.
 - It writes your guild's raids into a small data addon (`Interface\AddOns\Gargoyle_Sync`), which
   the game loads the next time you log in or `/reload`.
-- It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`), and Damage tooltips
-  (`Interface\AddOns\Gargoyle_Tooltips`) if you ticked them, from these releases, but only if
-  every file matches a manifest signed with Gargoyle's release key, which is kept offline and
-  never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking Damage tooltips removes that
-  addon's folder again. For helpers, it installs the Data Collector
+- It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`), and the addons you
+  tick in its Settings (Dungeons and Loot, ticked to start with, and Damage tooltips:
+  `Interface\AddOns\Gargoyle_Dungeons`, `Gargoyle_Loot` and `Gargoyle_Tooltips`), from these
+  releases, but only if every file matches a manifest signed with Gargoyle's release key, which
+  is kept offline and never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking one removes
+  that addon's folder again. For helpers, it installs the Data Collector
   (`Interface\AddOns\Gargoyle_Collector`) the same way, and removes it if their helper code is
   revoked.
 - For helpers, **Send collected data** reads the Data Collector's saved file

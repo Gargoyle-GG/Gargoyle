@@ -1,6 +1,11 @@
 -- Gargoyle: the in-game side of the Gargoyle website. Each feature is a module that can
 -- be turned on and off (Options > AddOns > Gargoyle).
 --
+-- This is the core. Some features are addons of their own, which the Gargoyle app installs
+-- when they're ticked in its Settings: Gargoyle_Dungeons (the dungeon journal) and
+-- Gargoyle_Loot (every item and where it comes from). They use the core's helpers through the
+-- Gargoyle table below, and register their tabs in the window like the core's own modules.
+--
 -- Addons can't go online, so website data comes through the Gargoyle app on the
 -- player's PC. The app writes a small data addon, Gargoyle_Sync, which the game loads at
 -- login or reload (the GargoyleSync table read below). It also reads what this addon
@@ -12,6 +17,13 @@
 local ADDON, ns = ...
 
 ns.modules, ns.moduleOrder = {}, {}
+Gargoyle = ns -- (for the module addons)
+
+-- The module addons, for Options to say how to get them when they aren't there.
+ns.MODULE_ADDONS = {
+  { key = "journal", title = "Dungeons", addon = "Gargoyle_Dungeons" },
+  { key = "loot", title = "Loot", addon = "Gargoyle_Loot" },
+}
 
 local GOLD = "|cffd4a017"
 
@@ -54,7 +66,8 @@ end
 -- ---- Modules ----
 
 -- module = { title, description, default (on unless false), OnLogin, OnEnable, OnDisable,
---            CreatePanel(parent) for its tab in the window, Refresh() when shown }
+--            CreatePanel(parent) for its tab in the window, Refresh() when shown,
+--            options: more checkboxes for the options page, each { label, get, set } }
 function ns.RegisterModule(key, module)
   module.key = key
   ns.modules[key] = module
@@ -93,14 +106,16 @@ local function loadDB()
   db.characters = tableOr(db.characters)
   -- Talent plans (Modules/Talents.lua): "<character key>#<talent set>" -> the website character followed.
   db.talentPlans = tableOr(db.talentPlans)
-  -- The dungeon journal (Modules/Journal.lua): the place last looked at, and for each character
-  -- you play, the website character whose upgrades it marks (false: no one).
+  -- Upgrades.lua: for each character you play, the website character whose upgrades and
+  -- wishlist go with it (false: no one; the dungeon journal kept these before 1.0.0), and the
+  -- wishlist changes made in game, waiting to sync.
   db.journal = tableOr(db.journal)
-  db.journal.chars = tableOr(db.journal.chars)
-  if type(db.journal.place) ~= "number" then db.journal.place = nil end
-  -- (and the view shown, Bosses, Map or Quests, and the boss's Loot or Abilities)
-  if type(db.journal.view) ~= "string" then db.journal.view = nil end
-  if type(db.journal.part) ~= "string" then db.journal.part = nil end
+  db.upgradesFor = tableOr(db.upgradesFor or db.journal.chars)
+  db.journal.chars = nil
+  db.wishes = tableOr(db.wishes)
+  -- (db.tooltipMarks: false when item tooltips don't get Gargoyle's upgrade and wishlist lines)
+  -- The module addons' own: db.journal (Gargoyle_Dungeons) and db.loot (Gargoyle_Loot).
+  db.loot = tableOr(db.loot)
   -- (db.calendar: false when Gargoyle's raids are kept off the game's calendar)
   db.minimap = tableOr(db.minimap) -- the minimap button: angle (degrees), hide
   -- Raid alerts (Modules/RaidAlerts.lua): newRaids, reminders (false = off), and the raids
@@ -241,7 +256,7 @@ local function readUpgrades(raw)
   if type(raw) ~= "table" then return end
   local items, count = {}, 0
   for _, row in ipairs(list(raw.items)) do
-    if count == 700 then break end
+    if count == 1000 then break end
     if type(row) == "table" and number(row[1]) and number(row[2]) then
       items[row[1]] = { row[2], number(row[3]) or 0 }
       count = count + 1
@@ -249,6 +264,19 @@ local function readUpgrades(raw)
   end
   return { items = items, count = count, spec = text(raw.spec, 40), level = number(raw.level), stale = raw.stale == true,
            at = number(raw.at) }
+end
+
+-- A character's wishlist on the website: {item id = true} (Upgrades.lua adds the changes made in game).
+local function readWishlist(raw)
+  local items, count = {}, 0
+  for _, id in ipairs(list(raw)) do
+    if count == 200 then break end
+    if number(id) then
+      items[id] = true
+      count = count + 1
+    end
+  end
+  return items
 end
 
 function ns.ReadSync()
@@ -265,7 +293,7 @@ function ns.ReadSync()
       sync.characters[#sync.characters + 1] = {
         id = c.id, name = text(c.name, 60), class = text(c.class, 20) or "", guild = number(c.guild),
         role = text(c.role, 10), game = text(c.game, 80), read = number(c.read), talents = readPlan(c.talents),
-        upgrades = readUpgrades(c.upgrades),
+        upgrades = readUpgrades(c.upgrades), wishlist = readWishlist(c.wishlist),
       }
     end
   end
@@ -321,6 +349,16 @@ function ns.CreateOptions()
     ns.optionBoxes[key] = box
     y = y - 56
   end
+  -- The module addons that aren't here: how to get them.
+  for _, m in ipairs(ns.MODULE_ADDONS) do
+    if not ns.modules[m.key] then
+      local missing = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
+      missing:SetPoint("TOPLEFT", 20, y - 4)
+      missing:SetText(m.title .. " isn't installed: tick it in the Gargoyle app's Settings (it's its own addon, "
+        .. m.addon .. "), or turn it on in the AddOns list.")
+      y = y - 26
+    end
+  end
   -- More options, each a checkbox: get() says if it's on, set(on) changes it.
   local more = {}
   y = y - 10
@@ -343,6 +381,12 @@ function ns.CreateOptions()
   ns.remindersBox = option("Remind me a day before a raid I haven't signed up for",
     function() return alerts.On("reminders") end, function(on) alerts.SetOn("reminders", on) end)
   ns.calendarBox = option("Mark my guilds' raids on the game's calendar", ns.Calendar.On, ns.Calendar.SetOn)
+  ns.tooltipMarksBox = option("Mark upgrades and wishlist items on item tooltips", ns.Upgrades.TooltipsOn,
+    ns.Upgrades.SetTooltipsOn)
+  -- The modules' own options (module.options: { label, get, set }).
+  for _, key in ipairs(ns.moduleOrder) do
+    for _, o in ipairs(ns.modules[key].options or {}) do option(o[1], o[2], o[3]) end
+  end
   -- Damage tooltips are their own addon (Gargoyle_Tooltips), installed by the Gargoyle app
   -- when it's ticked there; its switch lives here.
   local tips = GargoyleTooltips
@@ -399,6 +443,13 @@ events:SetScript("OnEvent", function(_, event, name)
     loadDB()
   elseif event == "PLAYER_LOGIN" then
     ns.sync = ns.ReadSync()
+    ns.Upgrades.OnLogin()
+    -- Once: the dungeon journal was part of Gargoyle until 1.0.0.
+    if not ns.modules.journal and GargoyleDB.journal.place ~= nil and not GargoyleDB.toldDungeons then
+      GargoyleDB.toldDungeons = true
+      ns.say("the Dungeons tab is its own addon now (Gargoyle_Dungeons). Tick Dungeons in the Gargoyle app's Settings "
+        .. "to get it back (update the app first if it isn't there).")
+    end
     for _, key in ipairs(ns.moduleOrder) do
       local module = ns.modules[key]
       if module.OnLogin then module:OnLogin() end

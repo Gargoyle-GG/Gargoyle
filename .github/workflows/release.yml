@@ -1,5 +1,5 @@
 # Builds a release from this repo's code whenever a version tag (v...) is pushed, and posts
-# the installer, the addon zips (Gargoyle, Gargoyle Damage Tooltips, Gargoyle Data Collector), their signed
+# the installer, the addon zips (Gargoyle, Gargoyle Dungeons, Gargoyle Loot, Gargoyle Damage Tooltips, Gargoyle Data Collector), their signed
 # manifests and versions.json (what the app reads to find updates) as a GitHub release.
 # Everything in a release is built here, in the open, from the tagged code. The build stops
 # unless each addon matches its manifest signed with Gargoyle's release key
@@ -27,7 +27,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+-tips\d+\.\d+\.\d+-col\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
+          if ($env:TAG -notmatch '^v\d+\.\d+\.\d+-addon\d+\.\d+\.\d+-tips\d+\.\d+\.\d+-col\d+\.\d+\.\d+-dun\d+\.\d+\.\d+-loot\d+\.\d+\.\d+$') { throw "Not a release tag: $env:TAG" }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -66,4 +66,6 @@ jobs:
           gh release create "$env:TAG" dist/GargoyleSetup.exe dist/Gargoyle-addon.zip dist/Gargoyle_Tooltips-addon.zip `
             dist/Gargoyle_Collector-addon.zip dist/versions.json dist/addon-manifest.json dist/addon-manifest.sig `
             dist/tooltips-manifest.json dist/tooltips-manifest.sig dist/collector-manifest.json dist/collector-manifest.sig `
+            dist/Gargoyle_Dungeons-addon.zip dist/dungeons-manifest.json dist/dungeons-manifest.sig `
+            dist/Gargoyle_Loot-addon.zip dist/loot-manifest.json dist/loot-manifest.sig `
             --title "Gargoyle $env:TAG" --generate-notes --verify-tag

@@ -221,7 +221,7 @@ def test_upgrade_picks_in_the_data_file():
     api = {"characters": [
         {"id": 1, "name": "Picks", "class": "mage",
          "upgrades": {"items": good + bad, "spec": HOSTILE[0] * 3, "level": 60, "stale": True, "at": 1_800_000_000}},
-        {"id": 2, "name": "Many", "class": "mage", "upgrades": {"items": [[i, 1, 1] for i in range(1, 900)], "level": 99}},
+        {"id": 2, "name": "Many", "class": "mage", "upgrades": {"items": [[i, 1, 1] for i in range(1, 1200)], "level": 99}},
         {"id": 3, "name": "None yet", "class": "mage"}, {"id": 4, "name": "Junk", "class": "mage", "upgrades": "x"}]}
     table = sync_file.sync_table(api, {})
     assert table["sends_upgrades"] is True
@@ -272,6 +272,49 @@ def test_new_raids_are_sent_once_then_let_go(tmp_path, game_folder):
     # The window: it's waiting until the website has answered, then it's the website's raid.
     assert overview.raids(syncer.table, [], {}, 1_800_000_000, syncer.new_raids)[0]["made"]
     assert [r.get("made") for r in overview.raids(syncer.table, [], config.get("sent"), 1_800_000_000, syncer.new_raids)] == [None]
+    calls.clear()
+    syncer.run()
+    assert [c[0] for c in calls] == ["sync"]  # not sent twice
+
+
+def test_wishlist_stars_from_the_game_are_sent_once(tmp_path, game_folder):
+    calls = []
+
+    class Answer:
+        status_code = 200
+
+        def __init__(self, data):
+            self.data = data
+
+        def json(self):
+            return self.data
+
+        def raise_for_status(self):
+            pass
+
+    class Http:
+        def request(self, method, url, headers=None, timeout=None, json=None):
+            calls.append((url.rsplit("/", 1)[1], json))
+            if url.endswith("/api/app/wishlist"):
+                return Answer({"results": [{"id": w["id"], "result": "full" if w["item"] == 2 else "saved"}
+                                           for w in json["wishes"]]})
+            return Answer({"user": "A", "time": 1, "characters": [
+                {"id": 11, "name": "Jainamage", "class": "mage", "wishlist": [6693, "x", 0, 99_999_999]}]})
+
+    saved = game_folder / "WTF" / "Account" / "123#1" / "SavedVariables" / "Gargoyle.lua"
+    saved.write_text('GargoyleDB = { ["wishes"] = { '
+                     '{ ["id"] = "w1-0001", ["character"] = 11, ["item"] = 6693, ["on"] = true, ["at"] = 1800000000 }, '
+                     '{ ["id"] = "w1-0002", ["character"] = 11, ["item"] = 2, ["on"] = true, ["at"] = 1800000001 }, '
+                     '{ ["id"] = "w1-0003", ["character"] = 11, ["item"] = 3, ["on"] = "yes", ["at"] = 1800000001 } } }')
+    config = Config(tmp_path / "config.json")
+    config.data.update(site="https://gargoyle.gg", game_folder=str(game_folder))
+    config.token = "t"
+    syncer = Syncer(config, http=Http(), log=lambda text: None)
+    assert syncer.run() == "0 upcoming raids, 1 wishlist change sent"
+    assert [c[0] for c in calls] == ["wishlist", "sync"]
+    assert [(w["id"], w["item"], w["on"]) for w in calls[0][1]["wishes"]] == [("w1-0001", 6693, True), ("w1-0002", 2, True)]
+    assert syncer.table["done"] == {"w1-0001": "saved", "w1-0002": "full"}  # (so the addon lets them go)
+    assert syncer.table["characters"][0]["wishlist"] == [6693]  # (the website's list, for the game)
     calls.clear()
     syncer.run()
     assert [c[0] for c in calls] == ["sync"]  # not sent twice
@@ -598,7 +641,7 @@ def test_versions():
     for bad in ({"file": "../x.zip"}, {"file": "x.exe"}, {"file": "a/b.zip"}, {"sha256": "abc"},
                 {"size": addon_install.MAX_DOWNLOAD + 1}, {"size": "3"}, {"size": True}, {"version": "new"}):
         assert addon_install.offer({**good, "addon": {**good["addon"], **bad}}) is None
-    for tag in ("../x", "a/b", "", None, "x" * 61):
+    for tag in ("../x", "a/b", "", None, "x" * 101):
         assert addon_install.offer({**good, "tag": tag}) is None and addon_install.app_download({**good, "tag": tag}) is None
     assert addon_install.app_download({**good, "app": {**good["app"], "file": "Setup.zip"}}) is None
     # Downloads only ever come from GitHub (which sends them on to its file servers).
@@ -715,7 +758,15 @@ def test_building_the_addon_zip(tmp_path):
     tag = build.release_tag()
     assert addon_install.offer({"tag": tag, "addon": entry})["version"] == build.addon_version()
     assert tag == (f"v{build.app_version()}-addon{build.addon_version()}-tips{build.addon_version('tooltips')}"
-                   f"-col{build.addon_version('collector')}")
+                   f"-col{build.addon_version('collector')}-dun{build.addon_version('dungeons')}"
+                   f"-loot{build.addon_version('loot')}")
+    assert len(tag) <= 60  # (apps before 1.8.0 read no longer tag)
+    # The module addons: likewise, each in its own folder.
+    for key, folder, file in (("dungeons", "Gargoyle_Dungeons", "Data/Journal.lua"), ("loot", "Gargoyle_Loot", "Data/Loot.lua")):
+        with zipfile.ZipFile(build.build_addon(tmp_path / "a", key)) as z:
+            names = z.namelist()
+            assert f"{folder}/{folder}.toc" in names and f"{folder}/{file}" in names
+            assert all(n.startswith(folder + "/") for n in names)
     # Damage tooltips: their own zip, unpacking as Gargoyle_Tooltips/...
     tips = build.build_addon(tmp_path / "a", "tooltips")
     with zipfile.ZipFile(tips) as z:
@@ -987,6 +1038,12 @@ def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, rele
     collector = build.addon_manifest(tag, "collector")
     (tmp_path / "release" / "collector-manifest.json").write_bytes(collector)
     (tmp_path / "release" / "collector-manifest.sig").write_bytes(release_key(collector))
+    for key in ("dungeons", "loot"):
+        with pytest.raises(SystemExit, match=f"No signed {key}-manifest.json"):
+            build.check_signed(tag)
+        module = build.addon_manifest(tag, key)
+        (tmp_path / "release" / f"{key}-manifest.json").write_bytes(module)
+        (tmp_path / "release" / f"{key}-manifest.sig").write_bytes(release_key(module))
     signed = build.check_signed(tag)
     assert signed["addon"][0] == body and signed["tooltips"][0] == tips and signed["collector"][0] == collector
     # Each manifest is its own addon's: swapping them doesn't pass.
@@ -1105,6 +1162,7 @@ def test_the_app_installs_ticked_damage_tooltips(tmp_path, game_folder, release_
     app._update_addon = lambda *args: gargoyle_app.App._update_addon(app, *args)
     app._check_app = lambda: gargoyle_app.App._check_app(app)
     app.retry_app_soon = lambda: gargoyle_app.App.retry_app_soon(app)
+    app.wanted = lambda key: gargoyle_app.App.wanted(app, key)
 
     def check(tips_version, install=False):
         app.syncer = Syncer(config, http=github(tips_version), log=lambda text: None)
@@ -1318,3 +1376,17 @@ def test_update_checks_can_be_switched_off(tmp_path, monkeypatch):
     assert started == [(False,)]  # off: GitHub isn't asked on its own...
     gargoyle_app.App.check_versions(app, install=True)
     assert started == [(False,), (True,)]  # ...only when you click to install
+
+
+def test_dungeons_and_loot_are_ticked_until_unticked(tmp_path):
+    pytest.importorskip("tkinter")
+    import types
+    import gargoyle_app
+    config = Config(tmp_path / "config.json")
+    app = types.SimpleNamespace(config=config)
+    wanted = {key: gargoyle_app.App.wanted(app, key) for key, _, _ in addon_install.TICKED}
+    assert wanted == {"dungeons": True, "loot": True, "tooltips": False}  # (Dungeons was part of Gargoyle)
+    config.set("dungeons", False)
+    config.set("tooltips", True)
+    assert not gargoyle_app.App.wanted(app, "dungeons") and gargoyle_app.App.wanted(app, "tooltips")
+    assert {addon_install.ADDONS[k] for k, _, _ in addon_install.TICKED} <= addon_install.OPTIONAL

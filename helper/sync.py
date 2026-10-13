@@ -2,8 +2,8 @@
 
 - Linking: asks the website for a code, then waits until someone approves it (app_api.py).
 - Sending: reads the Gargoyle addon's saved file(s) when the game rewrites them (on
-  /reload or logout) and sends signups and raids made in game that weren't sent yet, and
-  the characters picked in game whenever the addon has read them again.
+  /reload or logout) and sends signups, raids and wishlist stars made in game that weren't
+  sent yet, and the characters picked in game whenever the addon has read them again.
 - Fetching: gets your raids from the website and writes them into the Gargoyle_Sync data
   addon, which the game loads the next time you log in or /reload.
 - Helpers' collected data: only when Send collected data is clicked (send_collected; see
@@ -65,7 +65,7 @@ class Syncer:
         # What the window shows: the GargoyleSync table last written for the game, and the
         # signups, raids made and picked characters last read from the game's saved files.
         self.table = None
-        self.actions, self.picked, self.new_raids = [], [], []
+        self.actions, self.picked, self.new_raids, self.wishes = [], [], [], []
         self.collected = {}  # the collector's saved files, as last read: path -> (change time, id, entries)
 
     # ---- Talking to the website ----
@@ -203,8 +203,8 @@ class Syncer:
     def read_saved(self):
         """From every WoW account's saved file: the in-game signups, the picked characters
         (the latest copy of each), and the files' change times. (The raids made in game go
-        in self.new_raids.)"""
-        actions, characters, stamps, raids = {}, {}, {}, {}
+        in self.new_raids, and the wishlist stars in self.wishes.)"""
+        actions, characters, stamps, raids, wishes = {}, {}, {}, {}, {}
         for path in wow_paths.saved_files(self.game_folder):
             try:
                 info = path.stat()
@@ -219,10 +219,13 @@ class Syncer:
                 actions[action["id"]] = action
             for raid in sync_file.new_raids(saved):
                 raids[raid["id"]] = raid
+            for wish in sync_file.wishes(saved):
+                wishes[wish["id"]] = wish
             for c in sync_file.characters(saved):
                 if c["key"] not in characters or c["at"] > characters[c["key"]]["at"]:
                     characters[c["key"]] = c
         self.actions, self.picked, self.new_raids = list(actions.values()), list(characters.values()), list(raids.values())
+        self.wishes = list(wishes.values())
         return self.actions, self.picked, stamps
 
     def load_last(self):
@@ -387,8 +390,10 @@ class Syncer:
                 if isinstance(v, dict) and isinstance(v.get("result"), str)}
         new = [a for a in actions if a["id"] not in sent]
         made = [r for r in self.new_raids if r["id"] not in sent]
+        starred = [w for w in self.wishes if w["id"] not in sent]
         for path, key, items, batch in (("/api/app/signups", "actions", new, BATCH),
-                                        ("/api/app/raids", "raids", made, RAID_BATCH)):
+                                        ("/api/app/raids", "raids", made, RAID_BATCH),
+                                        ("/api/app/wishlist", "wishes", starred, BATCH)):
             for i in range(0, len(items), batch):
                 answer = self._call("POST", path, json={key: items[i:i + batch]})
                 for result in answer.get("results", []) if isinstance(answer, dict) else []:
@@ -401,7 +406,7 @@ class Syncer:
             raise ValueError("the website's answer didn't make sense")
         self.config.set("helper", api.get("helper") is True)  # (the Data Collector: for helpers only)
         # What the addon may let go of: everything answered that's still in an outbox.
-        waiting = {a["id"] for a in actions} | {r["id"] for r in self.new_raids}
+        waiting = {a["id"] for a in actions} | {r["id"] for r in self.new_raids} | {w["id"] for w in self.wishes}
         done = {k: v["result"] for k, v in sent.items() if k in waiting}
         self.write_sync(api, done, imports)
         # Forget answers the addon has let go of, after a while.
@@ -419,4 +424,7 @@ class Syncer:
             summary += f", {saved} signup{'s' if saved != 1 else ''} sent"
         if characters_saved:
             summary += f", {characters_saved} character{'s' if characters_saved != 1 else ''} updated"
+        wished = sum(1 for w in starred if sent.get(w["id"], {}).get("result") == "saved")
+        if wished:
+            summary += f", {wished} wishlist change{'s' if wished != 1 else ''} sent"
         return summary

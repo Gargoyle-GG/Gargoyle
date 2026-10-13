@@ -1,4 +1,4 @@
-"""The Gargoyle addon (addon/Gargoyle), run in Lua 5.1 (lupa, like the game's Lua) against a
+"""The Gargoyle addons (addon/Gargoyle, the core, and its module addons), run in Lua 5.1 (lupa, like the game's Lua) against a
 small stand-in for the game's addon API. The stand-in only knows the widget methods listed
 below, so a typo or a method we forgot fails here."""
 import sys
@@ -11,6 +11,8 @@ from lupa import lua51  # noqa: E402
 
 PROJECT = Path(__file__).resolve().parent.parent
 ADDON = PROJECT / "addon" / "Gargoyle"
+DUNGEONS = PROJECT / "addon" / "Gargoyle_Dungeons"
+LOOT = PROJECT / "addon" / "Gargoyle_Loot"
 TOOLTIPS = PROJECT / "addon" / "Gargoyle_Tooltips"
 COLLECTOR = PROJECT / "addon" / "Gargoyle_Collector"
 sys.path.insert(0, str(PROJECT / "helper"))
@@ -27,7 +29,7 @@ local NOOP = { "SetSize", "SetWidth", "SetHeight", "ClearAllPoints", "SetAllPoin
   "EnableMouseWheel", "SetAutoFocus", "SetMaxLetters", "SetTextColor", "SetWordWrap", "SetToplevel", "SetTitle",
   "SetPortraitToAsset", "SetTexture", "SetTexCoord", "SetBlendMode", "SetVertexColor", "SetFrameLevel",
   "RegisterForClicks", "SetMaxLines", "AddMaskTexture", "SetLooping", "SetFromAlpha", "SetToAlpha", "SetDuration",
-  "SetSmoothing", "Raise" }
+  "SetSmoothing", "Raise", "SetAtlas" }
 for _, name in ipairs(NOOP) do methods[name] = function() end end
 function methods:SetPoint(...) self.point = { ... } end
 function methods:SetAllPoints(target) self.over = target end
@@ -88,6 +90,10 @@ function fake.chooseIn(current, text) -- the dropdown showing `current`: pick ex
   end
 end
 function methods:SetScript(name, fn) self.scripts[name] = fn end
+function methods:HookScript(name, fn)
+  local old = self.scripts[name]
+  self.scripts[name] = old and function(...) old(...); fn(...) end or fn
+end
 function methods:GetScript(name) return self.scripts[name] end
 function methods:Show() self.shown = true end
 function methods:Hide() self.shown = false end
@@ -412,6 +418,15 @@ UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { uiMapID = ma
 C_Map = { CanSetUserWaypointOnMap = function(map) return map ~= 9999 end,
           SetUserWaypoint = function(point) table.insert(fake.pins, point) end }
 C_SuperTrack = { SetSuperTrackedUserWaypoint = function(on) fake.tracking = on end }
+-- The game's own Ctrl-click and Shift-click on items (recorded: only a click may run them),
+-- and its dressing room. (What you wear: fake.char.gear, above.)
+fake.modified, fake.handled, fake.dressed = nil, {}, {}
+IsModifiedClick = function(kind) return fake.modified == kind end
+HandleModifiedItemClick = function(link) table.insert(fake.handled, link); return true end
+DressUpItemLink = function(link) table.insert(fake.dressed, link); return true end
+C_Item.GetItemInfoInstant = function(id) return id, "Armor", "Cloth", (fake.items[id] or {}).equip or "INVTYPE_CHEST" end
+function methods:SetDesaturated(on) self.desaturated = on end
+function methods:SetAlpha(a) self.alpha = a end
 -- (nothing may ever equip, use or pick up an item)
 local function noTouching() error("Gargoyle must never change your items") end
 EquipItemByName, UseItemByName, PickupItem, C_Item.EquipItemByName, C_Item.PickupItemByID = noTouching, noTouching, noTouching, noTouching, noTouching
@@ -488,7 +503,8 @@ API = {  # what /api/app/sync answers (see app_api.py)
 
 
 class Game:
-    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None, collector=False):
+    def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None, collector=False,
+                 dungeons=True, loot=False, loot_data=None):
         self.lua = lua51.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(FAKE_GAME)
         self.fake = self.lua.globals().fake
@@ -506,11 +522,15 @@ class Game:
         toc = (ADDON / "Gargoyle.toc").read_text(encoding="utf-8").splitlines()
         for name in (line.strip() for line in toc):
             if name and not name.startswith("#"):
-                source = (ADDON / name.replace("\\", "/")).read_text(encoding="utf-8")
-                if journal is not None and name == "Data\\Journal.lua":
-                    source = journal  # (a small journal for the test, in place of the real one)
-                run(source, name, self.ns)
+                run((ADDON / name.replace("\\", "/")).read_text(encoding="utf-8"), name, self.ns)
         self.fake.fire("ADDON_LOADED", "Gargoyle")
+        # The module addons (## Dependencies: Gargoyle: the game loads them after it).
+        self.dns = self.lua.table()  # (Gargoyle_Dungeons' own)
+        if dungeons:
+            self.load_module(DUNGEONS, "Gargoyle_Dungeons", self.dns, {"Data\\Journal.lua": journal})
+        self.lns = self.lua.table()  # (Gargoyle_Loot's own)
+        if loot:
+            self.load_module(LOOT, "Gargoyle_Loot", self.lns, {"Data\\Loot.lua": loot_data})
         if tooltips:  # (the game loads it after Gargoyle: its name comes later)
             self.tips_ns = self.lua.table()
             toc = (TOOLTIPS / "Gargoyle_Tooltips.toc").read_text(encoding="utf-8").splitlines()
@@ -526,6 +546,16 @@ class Game:
                     load((COLLECTOR / name.replace("\\", "/")).read_text(encoding="utf-8"), name)
             self.fake.fire("ADDON_LOADED", "Gargoyle_Collector")
         self.fake.fire("PLAYER_LOGIN")
+
+    def load_module(self, folder, name, ns, instead):
+        """Runs a module addon's files in .toc order (`instead`: a file's stand-in for the test)."""
+        run = self.lua.eval('function(src, file, addon, ns) local f = assert(loadstring(src, "@" .. file)); f(addon, ns) end')
+        toc = (folder / f"{name}.toc").read_text(encoding="utf-8").splitlines()
+        for file in (line.strip() for line in toc):
+            if file and not file.startswith("#"):
+                source = instead.get(file) or (folder / file.replace("\\", "/")).read_text(encoding="utf-8")
+                run(source, file, name, ns)
+        self.fake.fire("ADDON_LOADED", name)
 
     @property
     def db(self):
@@ -1765,7 +1795,7 @@ def test_upgrades_are_marked_for_the_character_you_play():
 
 def map_pins(game):
     """{place name: its pin} on the Map view."""
-    places = game.ns.JOURNAL
+    places = game.dns.JOURNAL
     return {places[w.index].name: w for w in game.fake.widgets.values() if w.kind == "Button" and w.glow and w.index}
 
 
@@ -1850,8 +1880,8 @@ def test_the_view_part_and_character_are_kept():
     game.choose_in("Jainamage", "Jainalt")
     assert "Jainalt's upgrades haven't been worked out yet: open it in the planner on the website" in game.texts()
     game.choose_in("Jainalt", "No one")
-    assert "Pick one of your Gargoyle characters above" in game.texts()
-    assert game.db.journal.chars["Player-1-00ABCDEF"] is False
+    assert "Pick one of your Gargoyle characters (Upgrades for)" in game.texts()
+    assert game.db.upgradesFor["Player-1-00ABCDEF"] is False
     saved = ("GargoyleDB = { journal = { chars = { ['Player-1-00ABCDEF'] = 12 }, place = 33, view = 'bosses',"
              " part = 'loot' } }")
     game = journal_game(saved=saved)
@@ -1891,10 +1921,15 @@ def test_item_tooltips_say_when_an_item_is_an_upgrade():
     game.lua.execute("fake.worn[872] = true")
     assert "Gargoyle" not in game.fake.itemTooltip(872)
     game.lua.execute("fake.worn[872] = false")
+    # The marks are the core's: they stay without the Dungeons tab, and have their own switch.
     box = game.ns.optionBoxes.journal
     box.SetChecked(box, False)
     box.scripts.OnClick(box)
-    assert "Gargoyle" not in game.fake.itemTooltip(872) and game.fake.button("Dungeons") is None
+    assert "upgrade for Jainamage" in game.fake.itemTooltip(872) and game.fake.button("Dungeons") is None
+    box = game.ns.tooltipMarksBox
+    box.SetChecked(box, False)
+    box.scripts.OnClick(box)
+    assert "Gargoyle" not in game.fake.itemTooltip(872) and game.db.tooltipMarks is False
 
 
 def test_the_journal_without_app_data_or_with_an_older_app():
@@ -1921,7 +1956,7 @@ def test_odd_upgrade_data_is_skipped():
 
 def test_the_real_journal_data_loads_and_scrolls():
     game = Game(sync_lua(API, {}))
-    places = list(game.ns.JOURNAL.values())
+    places = list(game.dns.JOURNAL.values())
     ids = [p.id for p in places if p.id is not None]
     assert len(places) > 20 and len(set(ids)) == len(ids) and len(ids) > 25
     game.slash()
@@ -1936,7 +1971,7 @@ def test_the_real_journal_data_loads_and_scrolls():
         journal.PickPlace(i)
         for view in ("bosses", "quests", "map"):
             journal.ShowView(view)
-    assert len(list(game.ns.JOURNAL_MAPS.values())) == 2
+    assert len(list(game.dns.JOURNAL_MAPS.values())) == 2
 
 
 # ---- The data collector (addon/Gargoyle_Collector) ----
@@ -2147,3 +2182,85 @@ def test_the_talent_tree_is_read_once_the_game_has_loaded_it():
     game.fake.fire("TRAIT_CONFIG_LIST_UPDATED")
     settle(game)
     assert len(collected(game).talents.MAGE.nodes) == 4
+
+
+# ---- The core and its module addons; the wishlist (addon/Gargoyle/Upgrades.lua) ----
+
+WISH_API = {**JOURNAL_API, "characters": [{**JOURNAL_API["characters"][0], "wishlist": [5187]},
+                                          JOURNAL_API["characters"][1]]}
+
+
+def loot_row(game, name):
+    """The loot row (a button with a wishlist star) showing `name`."""
+    return next(w.parent for w in game.fake.widgets.values() if w.kind == "FontString" and name in w.text
+                and w.IsVisible(w) and w.parent.kind == "Button" and w.parent.star)
+
+
+def wishes(game):
+    return [dict(w.items()) for w in game.db.wishes.values()]
+
+
+def test_the_wishlist_star_on_a_drop_waits_to_sync():
+    game = journal_game(api=WISH_API)
+    hammer, rock = loot_row(game, "Rhahk'Zor's Hammer"), loot_row(game, "Rockslicer")
+    assert not hammer.star.icon.desaturated and rock.star.icon.desaturated  # (the website's list)
+    assert "On Jainamage's wishlist" in game.fake.itemTooltip(5187)
+    rock.star.scripts.OnClick(rock.star)
+    [w] = wishes(game)
+    assert (w["character"], w["item"], w["on"]) == (11, 872, True) and w["id"].startswith("w")
+    assert not rock.star.icon.desaturated and "On Jainamage's wishlist" in game.fake.itemTooltip(872)
+    assert "Waiting to sync: 1 wishlist change" in game.texts()
+    rock.star.scripts.OnClick(rock.star)  # (back as the website has it: nothing to send)
+    assert wishes(game) == [] and "On Jainamage" not in game.fake.itemTooltip(872)
+    hammer.star.scripts.OnClick(hammer.star)
+    assert [(w["item"], w["on"]) for w in wishes(game)] == [(5187, False)]
+    assert "On Jainamage" not in game.fake.itemTooltip(5187)
+    # Without a Gargoyle character there's no wishlist to keep.
+    game.choose_in("Jainamage", "No one")
+    rock.star.scripts.OnClick(rock.star)
+    assert "Pick one of your Gargoyle characters (Upgrades for)" in game.printed() and len(wishes(game)) == 1
+
+
+def test_answered_wishlist_changes_are_let_go():
+    saved = """GargoyleDB = { wishes = {
+      { id = "w1-0001", character = 11, item = 872, on = true, at = %d },
+      { id = "w1-0002", character = 11, item = 5193, on = true, at = %d },
+      { id = "w1-0003", character = 11, item = 5191, on = true, at = %d },
+      { id = "w1-0004", character = 11, item = 5191, on = "yes", at = %d } } }""" % (NOW - 60, NOW - 60, NOW - 40 * 86400, NOW)
+    game = Game(sync_lua(WISH_API, {"w1-0001": "saved", "w1-0002": "full"}), saved, journal=JOURNAL, before=ITEMS)
+    assert wishes(game) == []  # (answered, answered, too old, not a wishlist change)
+    assert "a wishlist change wasn't saved: the wishlist is full." in game.printed()
+
+
+def test_ctrl_and_shift_click_an_item_and_what_you_wear():
+    game = journal_game()
+    row = loot_row(game, "Rockslicer")
+    row.scripts.OnClick(row)
+    assert list(game.fake.handled.values()) == []  # (a plain click does nothing)
+    game.lua.execute('fake.modified = "DRESSUP"')
+    row.scripts.OnClick(row)
+    game.lua.execute('fake.modified = "CHATLINK"')
+    row.scripts.OnClick(row)
+    assert list(game.fake.handled.values()) == ["link", "link"]
+    game.lua.execute('fake.modified = nil; fake.char.gear[5] = "[Robe of the Moccasin]"')
+    row.scripts.OnEnter(row)
+    lines = list(game.lua.globals().GameTooltip.lines.values())
+    assert lines[0] == "Rockslicer" and "You wear: [Robe of the Moccasin]" in lines
+    assert "Ctrl-click: try it on. Shift-click: link it in chat." in lines
+
+
+def test_the_core_without_the_dungeons_addon():
+    saved = "GargoyleDB = { journal = { place = 36, chars = { ['Player-1-00ABCDEF'] = 12 } } }"
+    game = Game(sync_lua(JOURNAL_API, {}), saved, dungeons=False, before=ITEMS)
+    assert "the Dungeons tab is its own addon now" in game.printed() and game.db.toldDungeons is True
+    assert game.db.upgradesFor["Player-1-00ABCDEF"] == 12 and game.db.journal.chars is None  # (moved to the core)
+    options = [w.text for w in game.fake.widgets.values() if w.kind == "FontString"]
+    assert any(t.startswith("Dungeons isn't installed: tick it in the Gargoyle app's Settings") for t in options)
+    assert any(t.startswith("Loot isn't installed") for t in options)
+    game.slash()
+    assert game.fake.button("Dungeons") is None and game.fake.button("Raid signups") is not None
+    # Upgrade marks on item tooltips still work (for Jainalt, picked before 1.0.0: no picks yet).
+    assert "Gargoyle" not in game.fake.itemTooltip(872)
+    # Told once.
+    again = Game(sync_lua(JOURNAL_API, {}), "GargoyleDB = { journal = { place = 36 }, toldDungeons = true }", dungeons=False)
+    assert "its own addon" not in again.printed()

@@ -5,9 +5,9 @@ Each release has a versions.json saying what's in it: the release's tag, and the
 and app's versions, file names, sizes and SHA-256. An addon download is checked against
 those before anything is unpacked, every file in it has to sit inside that addon's folder,
 and the old copy is only swapped out once the new one is fully unpacked next to it.
-Nothing but Interface\\AddOns\\Gargoyle, (when it's ticked in the app's Settings)
-Interface\\AddOns\\Gargoyle_Tooltips, and (for Gargoyle's helpers, once they've entered a
-helper code) Interface\\AddOns\\Gargoyle_Collector is touched. A new app is installed by its own installer
+Nothing but Interface\\AddOns\\Gargoyle, the optional addons ticked in the app's Settings
+(Interface\\AddOns\\Gargoyle_Dungeons, Gargoyle_Loot and Gargoyle_Tooltips), and (for Gargoyle's
+helpers, once they've entered a helper code) Interface\\AddOns\\Gargoyle_Collector is touched. A new app is installed by its own installer
 (self_update.py).
 
 An addon folder that's a link (a developer's copy linked from elsewhere) is never updated.
@@ -26,11 +26,17 @@ from urllib.parse import urlsplit
 
 from version import RELEASES
 
-NAME = "Gargoyle"
+NAME = "Gargoyle"  # (the core: the module addons below need it)
+DUNGEONS = "Gargoyle_Dungeons"  # (the dungeon journal, installed if wanted: ticked unless unticked)
+LOOT = "Gargoyle_Loot"  # (every item and where it comes from, likewise)
 TOOLTIPS = "Gargoyle_Tooltips"  # (Gargoyle Damage Tooltips, its own addon, installed if wanted)
 COLLECTOR = "Gargoyle_Collector"  # (the Data Collector, for Gargoyle's helpers)
-ADDONS = {"addon": NAME, "tooltips": TOOLTIPS, "collector": COLLECTOR}  # (its key in versions.json: its folder)
-OPTIONAL = {TOOLTIPS, COLLECTOR}  # (the ones the app can take out again)
+# Each addon's key in versions.json: its folder.
+ADDONS = {"addon": NAME, "dungeons": DUNGEONS, "loot": LOOT, "tooltips": TOOLTIPS, "collector": COLLECTOR}
+OPTIONAL = {DUNGEONS, LOOT, TOOLTIPS, COLLECTOR}  # (the ones the app can take out again)
+# The ones ticked in the app's Settings: key, its name in the app, and whether it's ticked
+# before anyone has ticked or unticked it. (Dungeons was part of Gargoyle until its 1.0.0.)
+TICKED = (("dungeons", "Dungeons", True), ("loot", "Loot", True), ("tooltips", "Damage tooltips", False))
 MAX_DOWNLOAD = 10 * 1024 * 1024
 MAX_UNPACKED = 20 * 1024 * 1024
 MAX_FILES = 500
@@ -39,7 +45,7 @@ MAX_VERSIONS = 64 * 1024  # (versions.json)
 # the app installer's signed manifest is read from the public repo's own files).
 RELEASE_HOSTS = {"github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com",
                  "raw.githubusercontent.com"}
-TAG = re.compile(r"^[A-Za-z0-9._+-]{1,60}$")
+TAG = re.compile(r"^[A-Za-z0-9._+-]{1,100}$")
 FILE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 # Names a file in the addon may have: plain letters and digits, not ending in a dot or space
 # (Windows drops those), and not one of Windows' device names (CON, NUL, COM1...).
@@ -266,7 +272,7 @@ def install(game_folder, data, signed, name=NAME):
 
 
 def uninstall(game_folder, name):
-    """Takes an optional addon (Damage tooltips, the Data Collector) out of the game again, when
+    """Takes an optional addon (Dungeons, Loot, Damage tooltips, the Data Collector) out of the game again, when
     it's unticked in the app. Only that addon's own folder, and never a linked one. True if it
     was there."""
     if name not in OPTIONAL:

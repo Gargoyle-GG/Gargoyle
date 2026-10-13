@@ -364,10 +364,23 @@ class App:
                  self.set_update_checks).pack(anchor="w", pady=(px(4), 0))
         checkbox(page, "Keep the Gargoyle addon up to date", self.auto_update,
                  self.set_auto_update).pack(anchor="w", pady=(px(4), 0))
-        self.tooltips_on = tk.BooleanVar(value=self.config.get("tooltips") is True)
-        checkbox(page, "Also install Damage tooltips (a breakdown of your spells' damage and healing on their "
-                 "tooltips in game; turn it on or off in game in Gargoyle's options)", self.tooltips_on,
-                 self.set_tooltips).pack(anchor="w", pady=(px(4), 0))
+        # The optional addons: each its own addon, installed when ticked (addon_install.TICKED).
+        label(page, "Gargoyle addons", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
+        label(page, "Gargoyle itself has your raids, characters and talent plans. These add more to it:", fg=DIM,
+              wraplength=px(740)).pack(anchor="w", fill="x", pady=(px(4), 0))
+        about = {
+            "dungeons": "Dungeons: every dungeon and raid's bosses, loot, abilities and quests, and a map of where they are",
+            "loot": "Loot: every item in the game and where it comes from, with search, your upgrades and a wishlist "
+                    "you share with the website",
+            "tooltips": "Damage tooltips: a breakdown of your spells' damage and healing on their tooltips",
+        }
+        self.optional_on = {}
+        for key, _, _ in addon_install.TICKED:
+            self.optional_on[key] = tk.BooleanVar(value=self.wanted(key))
+            checkbox(page, about[key], self.optional_on[key],
+                     lambda key=key: self.set_optional(key)).pack(anchor="w", pady=(px(4), 0))
+        label(page, "Each one can also be turned on or off in game, in Gargoyle's options.", fg=DIM,
+              wraplength=px(740)).pack(anchor="w", fill="x", pady=(px(4), 0))
 
         # The Data Collector, for Gargoyle's helpers: a helper code unlocks it (collected.py).
         label(page, "Data collector (for helpers)", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
@@ -448,16 +461,21 @@ class App:
         dead_link = bool(folder) and addon_install.is_dead_link(addon_install.addons(folder) / addon_install.NAME)
         offer = addon_install.offer(self.versions)
         update = offer["version"] if offer and installed and addon_install.newer(offer["version"], installed) else None
-        tips = addon_install.installed_version(folder, addon_install.TOOLTIPS) if folder else None
-        tips_offer = addon_install.offer(self.versions, "tooltips")
-        tips_update = (config.get("tooltips") is True and tips and tips_offer and addon_install.newer(tips_offer["version"], tips)
-                       and not addon_install.is_linked(addon_install.addons(folder) / addon_install.TOOLTIPS))
         helper = config.get("helper") is True
         gatherer = addon_install.installed_version(folder, addon_install.COLLECTOR) if folder else None
-        gatherer_offer = addon_install.offer(self.versions, "collector")
-        gatherer_update = (helper and gatherer and gatherer_offer and addon_install.newer(gatherer_offer["version"], gatherer)
-                           and not addon_install.is_linked(addon_install.addons(folder) / addon_install.COLLECTOR))
-        with_tips = (f" · Damage tooltips {tips}" if tips else "") + (f" · Data Collector {gatherer}" if gatherer else "")
+        # The optional addons there, and the first one with an update out (when it's wanted).
+        extras, extra_update = [], None
+        for key, title, _ in addon_install.TICKED + (("collector", "Data Collector", False),):
+            name = addon_install.ADDONS[key]
+            have = addon_install.installed_version(folder, name) if folder else None
+            if have:
+                extras.append(f"{title} {have}")
+            out = addon_install.offer(self.versions, key)
+            wanted = helper if key == "collector" else self.wanted(key)
+            if (extra_update is None and wanted and have and out and addon_install.newer(out["version"], have)
+                    and not addon_install.is_linked(addon_install.addons(folder) / name)):
+                extra_update = f"{title} {out['version']} is out."
+        with_tips = "".join(f" · {e}" for e in extras)
 
         # Account
         user = config.get("user") or "your account"
@@ -487,9 +505,8 @@ class App:
                       ("Install the addon", self.install_addon), primary=True)
         elif linked_folder:
             game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone){with_tips}")
-        elif update or tips_update or gatherer_update:
-            out = (f"Version {update} is out." if update else f"Damage tooltips {tips_offer['version']} are out."
-                   if tips_update else f"Data Collector {gatherer_offer['version']} is out.")
+        elif update or extra_update:
+            out = f"Version {update} is out." if update else extra_update
             game.show("waiting", f"Addon {installed}", self.install_problem or out, ("Update", self.install_addon),
                       primary=True)
         else:
@@ -915,9 +932,10 @@ class App:
                 return
             if self._update_addon(folder, "addon", install):
                 self.syncer.last_refresh = 0  # sync now (the new copy needs its raid data)
-            # Damage tooltips: when ticked in Settings (and once Gargoyle is there).
-            if self.config.get("tooltips") is True and addon_install.installed_version(folder) is not None:
-                self._update_addon(folder, "tooltips", install)
+            # The optional addons: when ticked in Settings (and once Gargoyle is there).
+            for key, _, _ in addon_install.TICKED:
+                if self.wanted(key) and addon_install.installed_version(folder) is not None:
+                    self._update_addon(folder, key, install)
             # The Data Collector: for helpers (likewise).
             if self.config.get("helper") is True and addon_install.installed_version(folder) is not None:
                 self._update_addon(folder, "collector", install)
@@ -972,11 +990,12 @@ class App:
         return installed_app() and not self.updating and 0 < getattr(self, "quick_retries", 0) < UNSIGNED_RETRIES
 
     def _update_addon(self, folder, key, install):
-        """Installs or updates one addon ("addon": Gargoyle, "tooltips": Damage tooltips,
-        "collector": the Data Collector) if the release has a newer one. True if it did."""
+        """Installs or updates one addon ("addon": Gargoyle, "dungeons", "loot", "tooltips": Damage
+        tooltips, "collector": the Data Collector) if the release has a newer one. True if it did."""
         put = self.events.put
         name = addon_install.ADDONS[key]
-        title = {"addon": "Gargoyle addon", "tooltips": "Damage tooltips addon", "collector": "Data Collector addon"}[key]
+        title = {"addon": "Gargoyle addon", "dungeons": "Dungeons addon", "loot": "Loot addon",
+                 "tooltips": "Damage tooltips addon", "collector": "Data Collector addon"}[key]
         offer = addon_install.offer(self.versions, key)
         current = addon_install.installed_version(folder, name)
         if not offer:
@@ -990,7 +1009,7 @@ class App:
         linked = addon_install.is_linked(addon_install.addons(folder) / name)
         auto_off = self.config.get("auto_update", True) is False
         # Without a click: never a linked copy, Gargoyle's first install waits for one, and
-        # updates wait when they're switched off. (Ticked Damage tooltips, and a helper's Data
+        # updates wait when they're switched off. (Ticked optional addons, and a helper's Data
         # Collector, go in straight away.)
         if not install and (linked or (current is None and key == "addon") or (current is not None and auto_off)):
             return False
@@ -1003,21 +1022,29 @@ class App:
         put(("notify", text + " If the game is open, restart it to load it."))
         return True
 
-    def set_tooltips(self):
-        """Damage tooltips ticked (installed now) or unticked (taken out of the game)."""
-        on = self.tooltips_on.get()
-        self.config.set("tooltips", on)
+    def wanted(self, key):
+        """Is an optional addon ("dungeons", "loot", "tooltips") ticked? (Its default until it's
+        been ticked or unticked.)"""
+        choice = self.config.get(key)
+        default = next(d for k, _, d in addon_install.TICKED if k == key)
+        return default if choice is None else choice is True
+
+    def set_optional(self, key):
+        """An optional addon ticked (installed now) or unticked (taken out of the game)."""
+        on = self.optional_on[key].get()
+        self.config.set(key, on)
         if on:
             self.check_versions(install=True)
             return
         folder = self.syncer.game_folder
         if not folder:
             return
+        title = next(t for k, t, _ in addon_install.TICKED if k == key)
         try:
-            if addon_install.uninstall(folder, addon_install.TOOLTIPS):
-                self.log("Removed the Damage tooltips addon. If the game is open, it's gone after a restart.")
+            if addon_install.uninstall(folder, addon_install.ADDONS[key]):
+                self.log(f"Removed the {title} addon. If the game is open, it's gone after a restart.")
         except addon_install.InstallError as exc:
-            self.log(f"Couldn't remove the Damage tooltips addon: {exc}.")
+            self.log(f"Couldn't remove the {title} addon: {exc}.")
         self.refresh()
 
     # ---- The Data Collector (for helpers) ----

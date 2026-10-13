@@ -1,5 +1,6 @@
--- Dungeon journal: WoW Forever's dungeons and raids in the Gargoyle window, as on the website's
--- Dungeons pages. The game has no journal of its own for them. Pick a place on the left
+-- Gargoyle Dungeons: WoW Forever's dungeons and raids in the Gargoyle window, as on the website's
+-- Dungeons pages. An addon of its own that needs Gargoyle (the core), which it uses through the
+-- Gargoyle table. The game has no journal of its own for them. Pick a place on the left
 -- (inside a dungeon the tab opens on it), then:
 --   Bosses: each boss in order; its loot and its abilities (in the game's own words).
 --   Quests: the place's quests for your side and class, who gives each one and where, and the
@@ -12,21 +13,22 @@
 -- original raids Forever hasn't announced say "Not yet released" and have no pin.
 --
 -- The drops and quest rewards that are upgrades for one of your Gargoyle characters are
--- marked, with how much better each one is: the website's planner works those out (from the
--- character's gear, talents and level) and the Gargoyle app brings them in. Items you're
--- wearing aren't marked. The same mark shows on item tooltips anywhere in the game.
+-- marked, with how much better each one is (the core's Upgrades.lua), and each drop has a
+-- wishlist star. Ctrl-click a drop to try it on, Shift-click to link it, as in your bags.
 --
 -- Its data (Data/Journal.lua) is ids, names, levels, places and drop chances; item names,
 -- icons and tooltips and the abilities' text come from the game. Apart from that one map pin, it only shows things.
 local _, ns = ...
+local G = Gargoyle
+local Upgrades = G.Upgrades
 
 local Journal = {
   title = "Dungeons",
   description = "WoW Forever's dungeons and raids: each boss's loot and abilities, and the quests with their "
     .. "chains, with the drops that are upgrades for your character marked (on item tooltips too).",
 }
-ns.RegisterModule("journal", Journal)
-ns.Journal = Journal
+G.RegisterModule("journal", Journal)
+ns.Journal, G.Journal = Journal, Journal -- (G.Journal: for Gargoyle Loot's "Open in Dungeons")
 
 local PLACES = ns.JOURNAL or {}
 local ROWS, ROW_HEIGHT = 18, 22 -- places in the list
@@ -74,46 +76,10 @@ local function view()
   return VIEW_TITLES[v] and v or "bosses"
 end
 
--- ---- Whose upgrades ----
+-- ---- Whose upgrades (the core's) ----
 
--- The Gargoyle character whose upgrades are marked for the one you're playing: the one picked
--- here, else the one kept up to date from it.
-function Journal.Chosen()
-  local key = ns.PlayerKey()
-  local picked = key and GargoyleDB.journal.chars[key]
-  if picked == false then return end
-  local fromGame
-  for _, c in ipairs(ns.sync.characters) do
-    if picked and c.id == picked then return c end
-    if key and c.game == key then fromGame = c end
-  end
-  return fromGame
-end
-
-function Journal.Choose(id)
-  local key = ns.PlayerKey()
-  if key then GargoyleDB.journal.chars[key] = id or false end
-  Journal:Refresh(true)
-end
-
-local function worn(itemID)
-  local isEquipped = (C_Item and C_Item.IsEquippedItem) or IsEquippedItem
-  if not isEquipped then return false end
-  local ok, yes = pcall(isEquipped, itemID)
-  return ok and yes == true
-end
-
--- How much better an item is for the character (gain, gain in %), or nil.
-function Journal.Gain(itemID, character)
-  character = character or Journal.Chosen()
-  local gain = character and character.upgrades and character.upgrades.items[itemID]
-  if gain and not worn(itemID) then return gain end
-end
-
-local function gainText(gain)
-  local points = gain[1] >= 10 and string.format("%d", math.floor(gain[1] + 0.5)) or string.format("%.1f", gain[1])
-  return string.format("+%s (%s%%)", points, gain[2] >= 10 and string.format("%d", math.floor(gain[2] + 0.5)) or string.format("%.1f", gain[2]))
-end
+Journal.Chosen, Journal.Choose, Journal.Gain = Upgrades.Chosen, Upgrades.Choose, Upgrades.Gain
+local gainText = Upgrades.GainText
 
 -- A drop chance: "1.5%", "20%" (one decimal under 10%, as on the website).
 local function chanceText(pct)
@@ -251,12 +217,12 @@ end
 function Journal.ShowOnMap(s)
   if not (s and s.map and s.x and s.y and C_Map and C_Map.SetUserWaypoint and UiMapPoint) then return false end
   if C_Map.CanSetUserWaypointOnMap and not C_Map.CanSetUserWaypointOnMap(s.map) then
-    ns.say("the game can't put a pin on that map.")
+    G.say("the game can't put a pin on that map.")
     return false
   end
   C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(s.map, s.x / 100, s.y / 100))
   if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
-  ns.say("map pin set: " .. startText(s) .. ".")
+  G.say("map pin set: " .. startText(s) .. ".")
   return true
 end
 
@@ -285,23 +251,11 @@ local function facts(p)
 end
 
 local function status(p, character)
-  local sync = ns.sync
-  if not sync.loaded then
-    return "Upgrade marks come from your Gargoyle account: with the Gargoyle app running, reload or log in again."
-  end
-  if not sync.sendsUpgrades then
-    return "Upgrade marks need the newest Gargoyle app. Its window offers it when it's out: update, then reload."
-  end
-  if not character then
-    if #sync.characters == 0 then return "Save a character on the website to see where its upgrades drop." end
-    return "Pick one of your Gargoyle characters above to see which drops are upgrades for it."
-  end
+  local missing = Upgrades.Missing(character)
+  if missing then return missing end
   local name = plain(character.name)
   local u = character.upgrades
-  if not u then
-    return name .. "'s upgrades haven't been worked out yet: open it in the planner on the website, then sync."
-  end
-  local who = name .. ((u.spec and u.level) and string.format(" (%s, level %d)", plain(u.spec), u.level) or "")
+  local who = Upgrades.Who(character)
   local n, best = Journal.Upgrades(p, character)
   local text
   if n == 0 then
@@ -320,6 +274,10 @@ local function itemButton(row, id, character)
   row.icon:SetTexture(icon or 134400) -- (the game's "?" until it's loaded)
   local gain = Journal.Gain(id, character)
   if row.upgrade then row.upgrade:SetShown(gain ~= nil) end
+  if row.star then
+    row.star.itemID = id
+    row.star:Update()
+  end
   return name, quality, gain
 end
 
@@ -382,7 +340,7 @@ local function chainLines(q)
   for _, step in ipairs(q.chain or {}) do steps[#steps + 1] = step end
   steps[#steps + 1] = q
   for i, step in ipairs(steps) do
-    local mark = done(step.id) and ns.Icon("UI-LFG-ReadyMark", 12) or (i == nextIndex and (GOLD .. ">|r") or " ")
+    local mark = done(step.id) and G.Icon("UI-LFG-ReadyMark", 12) or (i == nextIndex and (GOLD .. ">|r") or " ")
     local color = i == nextIndex and GOLD or (done(step.id) and GREY or "|cffffffff")
     local title = step == q and (plain(step.title) .. GREY .. " (this quest)|r") or plain(step.title)
     lines[#lines + 1] = string.format("%s %s%d. %s|r  %s%s|r", mark, color, i, title, GREY,
@@ -401,7 +359,7 @@ local function showQuests(p, character)
     row:SetShown(q ~= nil)
     if q then
       row.index = n
-      row.name:SetText((done(q.id) and (ns.Icon("UI-LFG-ReadyMark", 12) .. " ") or "") .. plain(q.title))
+      row.name:SetText((done(q.id) and (G.Icon("UI-LFG-ReadyMark", 12) .. " ") or "") .. plain(q.title))
       row.level:SetText(q.level and tostring(q.level) or "")
       row.selectedBg:SetShown(n == quest)
     end
@@ -482,25 +440,6 @@ function Journal:Refresh(fromMenu)
   ui.status:SetText(status(p, character))
 end
 
-local function whoMenu(parent)
-  local menu = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
-  menu:SetWidth(170)
-  menu:SetDefaultText("No one")
-  menu:SetupMenu(function(_, root)
-    root:CreateRadio("No one", function() return Journal.Chosen() == nil end, function() Journal.Choose(nil) end)
-    local list = {}
-    for _, c in ipairs(ns.sync.characters) do list[#list + 1] = c end
-    table.sort(list, function(a, b) return a.name:lower() < b.name:lower() end)
-    for _, c in ipairs(list) do
-      root:CreateRadio(plain(c.name), function(id)
-        local chosen = Journal.Chosen()
-        return chosen ~= nil and chosen.id == id
-      end, Journal.Choose, c.id)
-    end
-  end)
-  return menu
-end
-
 function Journal.ShowView(key)
   GargoyleDB.journal.view = key
   Journal:Refresh(true)
@@ -510,6 +449,17 @@ function Journal.PickPlace(i)
   selected, boss, quest = i, 1, 1
   bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
   Journal:Refresh()
+end
+
+-- Opens a place (its game id, or the name of one that has none yet) on the Bosses view: for
+-- Gargoyle Loot's "Open in Dungeons".
+function Journal.Open(id)
+  local i = placeIndex(id)
+  if not i then return end
+  selected, boss, quest = i, 1, 1
+  bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
+  GargoyleDB.journal.view = "bosses"
+  G.OpenWindow("journal")
 end
 
 function Journal.PickBoss(i)
@@ -545,13 +495,11 @@ local function text(parent, font, wrap)
   return fs
 end
 
+-- The game's tooltip for the item, and its own Ctrl-click (try it on) and Shift-click (link it).
 local function itemTooltip(row)
-  row:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetItemByID(self.itemID)
-    GameTooltip:Show()
-  end)
+  row:SetScript("OnEnter", function(self) G.Items.Tooltip(self, self.itemID) end)
   row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  row:SetScript("OnClick", function(self) G.Items.Click(self.itemID) end)
 end
 
 -- ---- The Map view ----
@@ -829,10 +777,12 @@ local function createBosses(body)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(24, 24)
     row.icon:SetPoint("LEFT", 4, 0)
+    row.star = G.Items.Star(row, 14)
+    row.star:SetPoint("RIGHT", -4, 0)
     row.chance = text(row, "GameFontDisableSmall")
-    row.chance:SetPoint("RIGHT", -6, 0)
+    row.chance:SetPoint("RIGHT", -24, 0)
     row.gain = text(row, "GameFontHighlightSmall")
-    row.gain:SetPoint("RIGHT", -44, 0)
+    row.gain:SetPoint("RIGHT", -62, 0)
     row.name = text(row, "GameFontHighlightSmall")
     row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
     row.name:SetPoint("RIGHT", row.gain, "LEFT", -4, 0)
@@ -908,7 +858,7 @@ local function createQuests(body)
   ui.showButton:SetSize(170, 20)
   ui.showButton:SetPoint("TOPLEFT", ui.qHow, "BOTTOMLEFT", 0, -6)
   ui.showButton:SetScript("OnClick", function(self) Journal.ShowOnMap(self.target) end)
-  ns.Tooltip(ui.showButton, "Show on map", "Puts the game's own map pin on where the next quest to do starts, as "
+  G.Tooltip(ui.showButton, "Show on map", "Puts the game's own map pin on where the next quest to do starts, as "
     .. "clicking the world map does. Steps inside a dungeon or started by an item have no pin.")
   ui.qObj = text(d, "GameFontHighlightSmall", true)
   ui.qObj:SetPoint("TOPLEFT", ui.showButton, "BOTTOMLEFT", 0, -8)
@@ -990,7 +940,7 @@ function Journal:CreatePanel(panel)
   ui.facts = text(detail, "GameFontHighlightSmall")
   ui.facts:SetPoint("TOPLEFT", ui.title, "BOTTOMLEFT", 0, -6)
   ui.facts:SetPoint("RIGHT", -14, 0)
-  ui.who = whoMenu(detail)
+  ui.who = Upgrades.Menu(detail)
   ui.who:SetPoint("TOPRIGHT", -12, -8)
   local whoLabel = text(detail, "GameFontNormalSmall")
   whoLabel:SetPoint("RIGHT", ui.who, "LEFT", -6, 0)
@@ -1016,19 +966,6 @@ function Journal:CreatePanel(panel)
   ui.status:SetPoint("RIGHT", -14, 0)
 end
 
--- ---- Item tooltips anywhere: "Upgrade for <character>" ----
-
-local function onItemTooltip(tooltip, data)
-  if not ns.IsEnabled("journal") or type(data) ~= "table" then return end
-  local id = data.id
-  if type(id) ~= "number" or (issecretvalue and issecretvalue(id)) then return end
-  local character = Journal.Chosen()
-  local gain = Journal.Gain(id, character)
-  if gain and tooltip.AddLine then
-    tooltip:AddLine(string.format("%sGargoyle: upgrade for %s, %s|r", GREEN, plain(character.name), gainText(gain)))
-  end
-end
-
 -- ---- Keeping up ----
 
 local watcher = CreateFrame("Frame")
@@ -1049,9 +986,12 @@ watcher:SetScript("OnEvent", function(_, event)
 end)
 
 function Journal:OnLogin()
-  if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
-    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, onItemTooltip)
-  end
+  -- What's kept (GargoyleDB.journal): the place last looked at (its id, or the name of one
+  -- that has no id yet), the view shown (Bosses, Quests or Map) and the boss's Loot or Abilities.
+  local db = GargoyleDB.journal
+  if type(db.place) ~= "number" and type(db.place) ~= "string" then db.place = nil end
+  if type(db.view) ~= "string" then db.view = nil end
+  if type(db.part) ~= "string" then db.part = nil end
   here = currentPlace()
 end
 

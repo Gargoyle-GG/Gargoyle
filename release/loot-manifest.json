@@ -1,0 +1,10 @@
+{
+ "files": {
+  "Gargoyle_Loot/Data/Loot.lua": "063212b45d0945f2c1db2d992505b0453785d2367b44250e377bb063d471ed72",
+  "Gargoyle_Loot/Gargoyle_Loot.toc": "1a626432ed2ea50d79114822e09a58d6c46d6bdcc857f8be03425651de9eab5c",
+  "Gargoyle_Loot/Loot.lua": "331468f377903fa3be7a1aa9649cf664cbdbfb15fe9179055028ee971ffd831d",
+  "Gargoyle_Loot/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
+ },
+ "tag": "v1.8.0-addon1.0.0-tips1.0.3-col1.0.1-dun1.0.0-loot1.0.0",
+ "version": "1.0.0"
+}

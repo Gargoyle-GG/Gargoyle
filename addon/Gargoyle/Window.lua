@@ -94,6 +94,7 @@ function ns.WaitingText()
     local part = ns.IsEnabled(key) and module.Waiting and module.Waiting()
     if part then parts[#parts + 1] = part end
   end
+  parts[#parts + 1] = ns.Wishlist.Waiting()
   if #parts > 0 then return "Waiting to sync: " .. table.concat(parts, ", ") end
 end
 
@@ -119,6 +120,14 @@ function ns.ShowModule(key)
   local module = ns.modules[key]
   if module and module.Refresh then module:Refresh() end
   ns.UpdateStatus()
+end
+
+-- The tab shown, drawn again (after a change made elsewhere: whose upgrades, the wishlist).
+function ns.RefreshShown(fromMenu)
+  local module = current and ns.modules[current]
+  if window and window:IsShown() and module and module.Refresh and panels[current] and panels[current]:IsShown() then
+    module:Refresh(fromMenu)
+  end
 end
 
 -- Tabs hang below the window, as on the character window.

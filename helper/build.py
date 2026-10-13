@@ -5,7 +5,7 @@ versions.json (what the app reads to find updates). GitHub runs this from the pu
 code for every release (.github/workflows/release.yml), so anyone can see exactly what the
 downloads are made from.
 
-    python helper/build.py --tag v1.4.0-addon0.6.0-tips1.0.0-col1.0.0     (everything)
+    python helper/build.py --tag v1.8.0-addon1.0.0-tips1.0.3-col1.0.1-dun1.0.0-loot1.0.0     (everything)
     python helper/build.py --addon                               (just the addon zips)
 
 The app is packaged with PyInstaller as a folder with GargoyleApp.exe in it (a single-file
@@ -41,7 +41,9 @@ ADDON_ZIP = "Gargoyle-addon.zip"
 SETUP = "GargoyleSetup.exe"
 # The addons in a release: versions.json's key for each, its folder, and its zip.
 ADDONS = {"addon": ("Gargoyle", ADDON_ZIP), "tooltips": ("Gargoyle_Tooltips", "Gargoyle_Tooltips-addon.zip"),
-          "collector": ("Gargoyle_Collector", "Gargoyle_Collector-addon.zip")}
+          "collector": ("Gargoyle_Collector", "Gargoyle_Collector-addon.zip"),
+          "dungeons": ("Gargoyle_Dungeons", "Gargoyle_Dungeons-addon.zip"),
+          "loot": ("Gargoyle_Loot", "Gargoyle_Loot-addon.zip")}
 
 VERSION_INFO = """VSVersionInfo(
   ffi=FixedFileInfo(filevers={nums}, prodvers={nums}),
@@ -66,7 +68,9 @@ def app_version():
 
 
 def release_tag():
-    return f"v{app_version()}-addon{addon_version()}-tips{addon_version('tooltips')}-col{addon_version('collector')}"
+    # (At most 60 letters: apps before 1.8.0 read no longer tag.)
+    return (f"v{app_version()}-addon{addon_version()}-tips{addon_version('tooltips')}-col{addon_version('collector')}"
+            f"-dun{addon_version('dungeons')}-loot{addon_version('loot')}")
 
 
 def entry(path, version):

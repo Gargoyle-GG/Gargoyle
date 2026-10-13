@@ -13,7 +13,8 @@ from lua_io import to_lua
 VERSION = 1  # GargoyleSync.version; the addon ignores a table it doesn't know
 ACTION_ID = re.compile(r"^[A-Za-z0-9:._-]{1,40}$")  # what the website accepts (app_api.py)
 MAX_TALENTS, MAX_SPELLS = 60, 10  # per character's talent plan, per talent
-MAX_UPGRADES = 700  # per character: the drops that are upgrades for it (the website's limit too)
+MAX_UPGRADES = 1000  # per character: the items that are upgrades for it (the website's limit too)
+MAX_WISHES = 200  # per character's wishlist (likewise)
 STATUSES = ("accepted", "tentative", "declined")
 ROLES = ("tank", "healer", "dps")
 
@@ -95,6 +96,9 @@ def _character(c):
     upgrades = _upgrades(c.get("upgrades"))
     if upgrades:
         out["upgrades"] = upgrades
+    wishlist = [i for i in _list(c.get("wishlist"))[:MAX_WISHES] if _int(i) is not None and 0 < i < 10_000_000]
+    if wishlist:
+        out["wishlist"] = wishlist
     return out
 
 
@@ -158,6 +162,20 @@ def outbox(saved):
                         "status": _text(a.get("status"), 10), "role": _text(a.get("role"), 10),
                         "note": _text(a.get("note"), 200) or "", "at": _int(a.get("at"))})
     return actions
+
+
+def wishes(saved):
+    """Wishlist stars clicked in game and not yet confirmed (GargoyleDB.wishes), as the
+    website's /api/app/wishlist wants them, from a read GargoyleDB file."""
+    db = saved.get("GargoyleDB") if isinstance(saved, dict) else None
+    out = []
+    for w in _list(db.get("wishes")) if isinstance(db, dict) else []:
+        if (not isinstance(w, dict) or not isinstance(w.get("id"), str) or not ACTION_ID.match(w["id"])
+                or not isinstance(w.get("on"), bool) or _int(w.get("item")) is None):
+            continue
+        out.append({"id": w["id"], "character": _int(w.get("character")), "item": w["item"], "on": w["on"],
+                    "at": _int(w.get("at"))})
+    return out
 
 
 def new_raids(saved):

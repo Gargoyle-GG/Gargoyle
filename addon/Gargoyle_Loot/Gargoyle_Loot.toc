@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Gargoyle Loot
+## Notes: Every item in WoW Forever and where it comes from, in the Gargoyle window: dungeon and raid drops, crafting, vendors and reputation, and item sets. Search them all, see which are upgrades for your character, try them on, and keep a wishlist you share with the Gargoyle website. Needs the Gargoyle addon. Turn it on or off in Options > AddOns > Gargoyle.
+## Author: Gargoyle
+## Version: 1.0.0
+## Dependencies: Gargoyle
+## IconTexture: Interface\AddOns\Gargoyle_Loot\Media\Badge
+
+Data\Loot.lua
+Loot.lua

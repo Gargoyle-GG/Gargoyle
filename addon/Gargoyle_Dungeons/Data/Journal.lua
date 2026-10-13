@@ -1,4 +1,4 @@
--- WoW Forever's dungeons and raids for the Gargoyle window's Dungeons tab (Modules/Journal.lua).
+-- WoW Forever's dungeons and raids for the Gargoyle window's Dungeons tab (Gargoyle_Dungeons/Journal.lua).
 -- Made by tools/build_journal_data.py from the website's dungeon journal: don't change it here.
 -- Each place: its game id, name, kind, size, levels and zone; each boss: its loot as
 -- { item id, drop chance in % } and its abilities as { spell id, name }; and its quests,
