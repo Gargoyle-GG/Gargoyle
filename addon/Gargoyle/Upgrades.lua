@@ -306,6 +306,8 @@ function Items.Star(parent, size)
   star.icon:SetAllPoints()
   star.icon:SetAtlas("PetJournal-FavoritesIcon")
   function star.Update(self)
+    if ns.Wishable and self.itemID and not ns.Wishable(self.itemID) then return self:Hide() end
+    self:Show()
     local on = self.itemID ~= nil and Wishlist.Has(self.itemID)
     self.icon:SetDesaturated(not on)
     self.icon:SetAlpha(on and 1 or 0.3)

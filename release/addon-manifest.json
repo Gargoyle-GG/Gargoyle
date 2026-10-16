@@ -2,7 +2,7 @@
  "files": {
   "Gargoyle/Core.lua": "f5b19e1dabee282400f32e1803b9a0d76bdaae9f95a8a7f197a4171fe76d9348",
   "Gargoyle/Debug.lua": "2381692f73b045d99035ec3ad5470ff18af973575e91efa0be0fb8a7a3286802",
-  "Gargoyle/Gargoyle.toc": "1af956966246c5e4664040a3c427834e35d75d58ee3c331fcacefea5f12e8247",
+  "Gargoyle/Gargoyle.toc": "0048453dff804e6a24033220dcbdfb459f8ee917c734364757629902d869bb72",
   "Gargoyle/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224",
   "Gargoyle/Media/Portrait.tga": "6b52200f15c92fdffe1c1afc62e67c983ea586baacaa126bc7db92455097edd8",
   "Gargoyle/Media/Round.tga": "0321c1da27a4445d53deb145b6d973345c8cd82465455719fd2d7430af9ca3e1",
@@ -12,9 +12,9 @@
   "Gargoyle/Modules/RaidAlerts.lua": "1a17d6f51d0f061d5008dbc4b396a6c70e1b598901c9371ff54698705d6acc2a",
   "Gargoyle/Modules/Raids.lua": "3c08f252a4370780c3798d32b5e5d0029fc50f63c6114559c14f3283ee3ba3bc",
   "Gargoyle/Modules/Talents.lua": "5ad0c60dbbbaf80d61420430a5153b18522c19fac0eab9136238f59d330cd2bb",
-  "Gargoyle/Upgrades.lua": "31441693d46abddd2b0e603630774d745f9e066abd9840a59e4210d50a1aa716",
+  "Gargoyle/Upgrades.lua": "6a3ef2903500e27a8c75cbf868f2219fc3faa6f59442244f812797515f4ca13f",
   "Gargoyle/Window.lua": "439afe44653380a70181ba8c1adaf6f81d6172f1dbc8d972181aec640c5deee5"
  },
- "tag": "v1.8.0-addon1.0.0-tips1.0.3-col1.0.1-dun1.0.0-loot1.0.0",
- "version": "1.0.0"
+ "tag": "v1.8.0-addon1.0.1-tips1.0.4-col1.0.1-dun1.0.1-loot1.0.1",
+ "version": "1.0.1"
 }

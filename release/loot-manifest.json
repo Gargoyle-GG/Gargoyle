@@ -1,10 +1,10 @@
 {
  "files": {
-  "Gargoyle_Loot/Data/Loot.lua": "063212b45d0945f2c1db2d992505b0453785d2367b44250e377bb063d471ed72",
-  "Gargoyle_Loot/Gargoyle_Loot.toc": "1a626432ed2ea50d79114822e09a58d6c46d6bdcc857f8be03425651de9eab5c",
-  "Gargoyle_Loot/Loot.lua": "331468f377903fa3be7a1aa9649cf664cbdbfb15fe9179055028ee971ffd831d",
+  "Gargoyle_Loot/Data/Loot.lua": "8c3574df20440a5dd971dccb5b611a982c05b35b94a15d6254368e7cc23cae90",
+  "Gargoyle_Loot/Gargoyle_Loot.toc": "72bf6980a641e09587330ac51e9c1aa256ae5d44571619be12dac8a3b6ee4d1f",
+  "Gargoyle_Loot/Loot.lua": "dac684fbcad1e08cef75a0cef21d83c6f553ee1c89ffc8796ca777280472db28",
   "Gargoyle_Loot/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
  },
- "tag": "v1.8.0-addon1.0.0-tips1.0.3-col1.0.1-dun1.0.0-loot1.0.0",
- "version": "1.0.0"
+ "tag": "v1.8.0-addon1.0.1-tips1.0.4-col1.0.1-dun1.0.1-loot1.0.1",
+ "version": "1.0.1"
 }

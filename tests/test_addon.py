@@ -220,7 +220,7 @@ LOCALIZED_CLASS_NAMES_MALE = { MAGE = "Mage" }
 fake.char = {
   guid = "Player-1-00ABCDEF", level = 60, unspent = 0,
   gear = { [1] = "|cffa335ee|Hitem:240056::::::::60:::::|h[Fireleaf Circlet]|h|r",
-           [9] = "|cffa335ee|Hitem:240052:723:::::::60:::::|h[Fireleaf Bindings]|h|r",
+           [9] = "|cffa335ee|Hitem:240052:8734:::::::60:::::|h[Fireleaf Bindings]|h|r",
            [16] = "|cffa335ee|Hitem:234571:723:::::::60:::::|h[Grand Marshal's Stave]|h|r" },
   ids = { [1] = 240056, [9] = 240052, [16] = 234571 },
   -- per tree: name, row, column, rank, most ranks, spell
@@ -743,7 +743,7 @@ def test_picking_the_character_you_play():
         (NOW, NOW, "Jainamage", "MAGE", "Human", "Alliance", 60)
     assert [(t.tab, t.rank, t.name, t.spell) for t in entry.talents.values()] == \
         [(1, 2, "Arcane Subtlety", 11210), (3, 5, "Improved Frostbolt", 11070)]
-    assert [(g.slot, g.item, g.enchant) for g in entry.gear.values()] == [(1, 240056, None), (9, 240052, 723), (16, 234571, 723)]
+    assert [(g.slot, g.item, g.enchant) for g in entry.gear.values()] == [(1, 240056, None), (9, 240052, 8734), (16, 234571, 723)]
     assert [(k.name, k.rank) for k in entry.skills.values()] == [("Tailoring", 300), ("Enchanting", 280)]  # (no weapon skills)
     assert "next time you reload (Reload UI) or log out" in game.printed()
     assert "Waiting to sync: 1 character. Reload or log out to send." in game.texts()
@@ -1583,19 +1583,19 @@ def tooltip_game(**kw):
 
 def test_frostbolt_breakdown():
     game = tooltip_game()
-    text = game.fake.spellTooltip(116)  # Frostbolt rank 1: 20 to 22, 40.7% of spell damage
-    # (20 + 81.4) x 1.06 Piercing Ice x 1.03 Arcane Instability; crits do 200% with Ice Shards.
+    text = game.fake.spellTooltip(116)  # Frostbolt rank 1: 19 to 21, 40.7% of spell damage
+    # (19 + 81.4) x 1.06 Piercing Ice x 1.03 Arcane Instability; crits do 200% with Ice Shards.
     assert text.splitlines() == [
         "A spell", " ", "Direct damage · Frost",
-        "Base | 20 – 22",
+        "Base | 19 – 21",
         "Spell damage 200 × 40.7% | +81",
         "Talents | × 1.09",
         "  Arcane Instability +3%, Piercing Ice +6%",
-        "Total damage | 111 – 113",
-        "Crit 10% for 200% | avg 123",
-        "Average damage per cast | 123",
-        "Per second of casting (1.5 sec) | 82",
-        "Per mana (25 mana) | 4.92",
+        "Total damage | 110 – 112",
+        "Crit 10% for 200% | avg 122",
+        "Average damage per cast | 122",
+        "Per second of casting (1.5 sec) | 81",
+        "Per mana (25 mana) | 4.87",
     ]
 
 
@@ -1606,7 +1606,7 @@ def test_talents_are_read_again_after_they_change():
     assert "Piercing Ice" in game.fake.spellTooltip(116)  # (until the game says they changed)
     game.fake.fire("TRAIT_CONFIG_UPDATED")
     text = game.fake.spellTooltip(116)
-    assert "Piercing Ice" not in text and "Crit 10% for 150% | avg 111" in text
+    assert "Piercing Ice" not in text and "Crit 10% for 150% | avg 110" in text
 
 
 def test_spells_without_a_breakdown_and_secret_numbers_add_nothing():

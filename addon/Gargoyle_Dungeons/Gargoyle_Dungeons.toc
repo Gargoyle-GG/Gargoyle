@@ -2,7 +2,7 @@
 ## Title: Gargoyle Dungeons
 ## Notes: A dungeon journal for WoW Forever in the Gargoyle window: every dungeon and raid's bosses, loot and abilities, their quests and quest chains, and a map of where they are, with the drops that are upgrades for your character marked. Needs the Gargoyle addon. Turn it on or off in Options > AddOns > Gargoyle.
 ## Author: Gargoyle
-## Version: 1.0.0
+## Version: 1.0.1
 ## Dependencies: Gargoyle
 ## IconTexture: Interface\AddOns\Gargoyle_Dungeons\Media\Badge
 

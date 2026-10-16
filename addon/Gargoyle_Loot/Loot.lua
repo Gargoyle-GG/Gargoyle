@@ -59,6 +59,8 @@ local ROWS, ROW_HEIGHT = 11, 31
 local GREEN, GREY, GOLD = "|cff3fd35c", "|cffb0b0b0", "|cffffd100"
 
 local byId, types = {}, {}
+-- (the core's stars, here and on the Dungeons tab: only on items in the game now)
+G.Wishable = function(id) return byId[id] ~= nil end
 for _, it in ipairs(ITEMS) do
   byId[it.id] = it
   if it.type then types[it.type] = true end
@@ -69,7 +71,7 @@ table.sort(TYPES)
 
 local ui = {}
 local navOffset, offset = 0, 0
-local entries = {} -- the list on the right: { header = text } or { item = it }
+local entries, listTitle, listKey = {}, "", nil -- the list on the right: { header = text } or { item = it }
 
 local function plain(text)
   return (tostring(text or ""):gsub("|", "||"))
@@ -424,8 +426,17 @@ function Loot:Refresh(fromMenu)
     end
   end
   -- The right: its items.
-  local list, title = build(filters())
-  entries = list
+  local f = filters()
+  local wishes = 0
+  for _ in ipairs(GargoyleDB.wishes) do wishes = wishes + 1 end
+  local key = table.concat({ s.cat, tostring(s.index), ui.search:GetText(), f.slot, f.type, tostring(f.usable),
+    tostring(f.myLevel), tostring(f.ups), tostring(f.level), tostring(character and character.id), Wishlist.Count(),
+    wishes }, "\031")
+  if key ~= listKey then -- (else it's the same list: scrolled, or an item's info came in)
+    entries, listTitle = build(f)
+    listKey = key
+  end
+  local title = listTitle
   offset = clamp(offset, #entries - ROWS)
   for i, row in ipairs(ui.rows) do showRow(row, entries[i + offset], character) end
   ui.title:SetText(plain(title))

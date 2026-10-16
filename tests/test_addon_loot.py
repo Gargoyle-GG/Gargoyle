@@ -206,3 +206,19 @@ def test_the_real_loot_data():
     search(game, "of the")
     assert "items" in game.texts()
     assert Path(PROJECT / "addon" / "Gargoyle_Loot" / "Gargoyle_Loot.toc").read_text(encoding="utf-8").count("## Dependencies: Gargoyle") == 1
+
+
+def test_stars_only_on_items_in_the_game_now():
+    game = loot_game()
+    game.click("Dungeons")
+    click_row(game, "Deadmines")
+    stars = {w.name.text: w.star.IsVisible(w.star) for w in game.fake.widgets.values()
+             if w.kind == "Button" and w.IsVisible(w) and w.star and w.name and w.name.text}
+    shown = {re.sub(r"\|c[0-9a-fA-F]{8}", "", k).split("|r")[0]: v for k, v in stars.items()}
+    # (Rockslicer is in Gargoyle Loot's data; Cruel Barb, which the journal lists, isn't: not in the game yet)
+    assert shown["Rockslicer"] is True
+    game.lua.execute("GargoyleDB.journal.part = 'loot'")
+    game.ns.Journal.PickBoss(2)
+    shown = {re.sub(r"\|c[0-9a-fA-F]{8}", "", w.name.text).split("|r")[0]: w.star.IsVisible(w.star)
+             for w in game.fake.widgets.values() if w.kind == "Button" and w.IsVisible(w) and w.star and w.name and w.name.text}
+    assert shown["Cruel Barb"] is False and shown["Blackened Defias Armor"] is True

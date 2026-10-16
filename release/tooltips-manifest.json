@@ -1,18 +1,18 @@
 {
  "files": {
-  "Gargoyle_Tooltips/Data/Druid.lua": "95f96c181ad077e64490cffca5875f69d8572a71fadc4cc5beb7e32f03e1a9e8",
-  "Gargoyle_Tooltips/Data/Hunter.lua": "0865a8550e4738cda6e68138cc0f8dc144314555a2ad13e01198faaca173b57b",
-  "Gargoyle_Tooltips/Data/Mage.lua": "e96241c90941c9dda2ce67ec9da7b42a7b39931b36f5f0e9dca16bd3a063b5e8",
-  "Gargoyle_Tooltips/Data/Paladin.lua": "82470837eba43170a9b8dc75391e4fc3f7dde8793244b1749e13b38d62159cde",
-  "Gargoyle_Tooltips/Data/Priest.lua": "bc3e9959774b5b3313e7b634d6fa6eefc569aed786fb198d3370b7a9374f928b",
+  "Gargoyle_Tooltips/Data/Druid.lua": "1be2eb3ec199c3d6f313bbea97632915a7899fc1272b8e593544c0c1ac26234a",
+  "Gargoyle_Tooltips/Data/Hunter.lua": "4fa9c8b9c8e113afbf810a4e0eb3b703157b1051f37914f245b7ba52b4a813d6",
+  "Gargoyle_Tooltips/Data/Mage.lua": "45c2bea94dc26b35acc2aad0743f9272328e51cad69598f51519b047b0dab0b3",
+  "Gargoyle_Tooltips/Data/Paladin.lua": "a5a573a989397819c0e07ca36ae788ba7b1df087c41b48421923e32114d91f81",
+  "Gargoyle_Tooltips/Data/Priest.lua": "cb3844559c1d95048d60ee1921491f9170658fd7dcc86520cea7dde4709d02ae",
   "Gargoyle_Tooltips/Data/Rogue.lua": "5140d15d37b03d34f1ed83c55725ed968053086a6cfca49e1251a4525e00b027",
-  "Gargoyle_Tooltips/Data/Shaman.lua": "6b31807c4d7275f3118468c2e58311292bfbdde86b44d9c35194dac7d11d218e",
-  "Gargoyle_Tooltips/Data/Warlock.lua": "d062170d4cf105299a48099fdcac702f55e0700c7865a9491d7ed4e6802f562f",
+  "Gargoyle_Tooltips/Data/Shaman.lua": "db193cfc693469eed6f76944b1b30e79f18be9c9abebfb52deb2fbd202fb48c0",
+  "Gargoyle_Tooltips/Data/Warlock.lua": "d46ebc8e40d2c335ba1df274f98f8baf677060318c28bfe29271fc76070a2a7d",
   "Gargoyle_Tooltips/Data/Warrior.lua": "529c3bd5134b8254efae3a224b7edef8de5d19a226c93de1710cd11b409e4e61",
-  "Gargoyle_Tooltips/Gargoyle_Tooltips.toc": "20fbcea8c47f3ddc3e800e3614e0ba0363b00e73c8050d48e7b2a14e1928d6f8",
+  "Gargoyle_Tooltips/Gargoyle_Tooltips.toc": "a4d88cd4396dce6a21de0160439a43c3e7e896ba9be92d9485040d5aa08b06a8",
   "Gargoyle_Tooltips/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224",
   "Gargoyle_Tooltips/Tooltips.lua": "b90578d8b37843ac9098ff4c88910ee92ce99cb924fba0bcad79343f39d0247f"
  },
- "tag": "v1.8.0-addon1.0.0-tips1.0.3-col1.0.1-dun1.0.0-loot1.0.0",
- "version": "1.0.3"
+ "tag": "v1.8.0-addon1.0.1-tips1.0.4-col1.0.1-dun1.0.1-loot1.0.1",
+ "version": "1.0.4"
 }

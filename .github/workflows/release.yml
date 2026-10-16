@@ -1,6 +1,7 @@
 # Builds a release from this repo's code whenever a version tag (v...) is pushed, and posts
 # the installer, the addon zips (Gargoyle, Gargoyle Dungeons, Gargoyle Loot, Gargoyle Damage Tooltips, Gargoyle Data Collector), their signed
-# manifests and versions.json (what the app reads to find updates) as a GitHub release.
+# manifests and versions.json (what the app reads to find updates) as a GitHub release, then
+# uploads the addons with a new version to CurseForge (when the repository has its token).
 # Everything in a release is built here, in the open, from the tagged code. The build stops
 # unless each addon matches its manifest signed with Gargoyle's release key
 # (helper/signing.py), which never comes near GitHub.
@@ -57,6 +58,15 @@ jobs:
         run: |
           python helper/build.py --tag "$env:TAG"
 
+      - name: The last release's versions (so only new addon versions go to CurseForge)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release download --repo "$env:REPO" --pattern versions.json --dir previous
+          if ($LASTEXITCODE -ne 0) { Write-Host "No earlier release."; $global:LASTEXITCODE = 0 }
+
       - name: Publish the release
         shell: pwsh
         env:
@@ -69,3 +79,11 @@ jobs:
             dist/Gargoyle_Dungeons-addon.zip dist/dungeons-manifest.json dist/dungeons-manifest.sig `
             dist/Gargoyle_Loot-addon.zip dist/loot-manifest.json dist/loot-manifest.sig `
             --title "Gargoyle $env:TAG" --generate-notes --verify-tag
+
+      - name: Upload the new addon versions to CurseForge (once it's set up, see .github/curseforge_upload.py)
+        env:
+          CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
+          CURSEFORGE_PROJECTS: ${{ vars.CURSEFORGE_PROJECTS }}
+          CURSEFORGE_GAME_VERSION: ${{ vars.CURSEFORGE_GAME_VERSION }}
+        run: |
+          python .github/curseforge_upload.py dist previous/versions.json
