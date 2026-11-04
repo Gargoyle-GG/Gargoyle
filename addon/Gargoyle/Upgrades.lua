@@ -246,6 +246,17 @@ local SLOTS = {
   INVTYPE_RANGEDRIGHT = { 18 }, INVTYPE_RELIC = { 18 }, INVTYPE_TABARD = { 19 },
 }
 
+-- Asks the game to load an item it hasn't yet, then calls done(). Nothing for an item id the
+-- game doesn't know (the data may list one a newer or older game build doesn't have).
+function Items.Load(id, done)
+  if not (Item and Item.CreateFromItemID) then return false end
+  if C_Item and C_Item.DoesItemExistByID then
+    local ok, exists = pcall(C_Item.DoesItemExistByID, id)
+    if ok and not exists then return false end
+  end
+  return pcall(function() Item:CreateFromItemID(id):ContinueOnItemLoad(done) end) == true
+end
+
 function Items.Link(id)
   local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
   if not getInfo then return end

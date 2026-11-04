@@ -223,14 +223,24 @@ local function readItem(id)
   local name, link, quality, ilvl, required, _, _, stack, slot, icon, price, classID, subclassID, bind, _, setID = getItemInfo(id)
   if not text(name) then
     if loading[id] or loadingCount >= MAX_LOADING or not (Item and Item.CreateFromItemID) then return "loading" end
+    if C_Item and C_Item.DoesItemExistByID then
+      local ok, exists = pcall(C_Item.DoesItemExistByID, id)
+      if ok and not exists then return nil end -- (not an item in this game)
+    end
     loading[id], loadingCount = true, loadingCount + 1
     local function done()
       if loading[id] then loading[id], loadingCount = nil, loadingCount - 1 end
     end
-    Item:CreateFromItemID(id):ContinueOnItemLoad(function()
-      done()
-      C.Want("items", id)
+    local ok = pcall(function()
+      Item:CreateFromItemID(id):ContinueOnItemLoad(function()
+        done()
+        C.Want("items", id)
+      end)
     end)
+    if not ok then
+      done()
+      return nil
+    end
     C_Timer.After(60, done) -- (one the game never finishes loading doesn't hold up the rest)
     return "loading"
   end

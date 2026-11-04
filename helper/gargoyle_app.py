@@ -245,6 +245,7 @@ class App:
             self.log(f"The website address {self.config.site} isn't https, so the app won't connect to it.")
         if not self.config.get("game_folder"):
             self.find_folder()
+        self.tell_about_release()
         self.repair_addons()
         self_update.clear()  # (the installer of the update just done, if there was one)
         self.syncer.load_last()
@@ -879,12 +880,25 @@ class App:
             self.log(f"Found the game in {found[0]}." + (" (Others too: Settings, Choose… to switch.)" if len(found) > 1 else ""))
             return
         versions = wow_paths.find_game_folders(with_addon=False)
+        release = [v for v in versions if v.name == wow_paths.RELEASE_FOLDER]
+        if release:  # (WoW Forever's own, when the beta's or others are there too)
+            versions = release[:1]
         if len(versions) == 1:
             self.config.set("game_folder", str(versions[0]))
             self.log(f"Found the game in {versions[0]}. The Gargoyle addon isn't installed there yet.")
         elif versions:
             self.log("Found the game in more than one folder (" + ", ".join(str(v) for v in versions)
-                     + "). Choose the one you play on.")
+                     + "). Choose the one you play on (WoW Forever's is the _forever_ folder).")
+
+    def tell_about_release(self):
+        """Once: the release game is installed beside the beta folder the app uses."""
+        folder = self.config.get("game_folder")
+        release = folder and wow_paths.release_instead(folder)
+        if release and self.config.get("told_release") != str(release):
+            self.config.set("told_release", str(release))
+            self.log(f"WoW Forever's release game is installed ({release}). To sync and install the addons there, "
+                     "go to Settings and click Choose… next to the game folder.")
+            self.events.put(("notify", "WoW Forever is installed: switch the game folder in the Gargoyle app's Settings."))
 
     def choose_folder(self):
         chosen = filedialog.askdirectory(title="The World of Warcraft folder (or the version folder inside it)")
@@ -949,6 +963,7 @@ class App:
             if install:
                 self.install_problem = f"Couldn't install it: {exc}."
             put(("log", f"Couldn't install the addon: {exc}."))
+            self.next_version_check = time.time() + VERSION_RETRY_SECONDS  # (tried again soon, not in 6 hours)
         except Exception as exc:  # (anything else: said, rather than the checks quietly stopping)
             put(("log", f"Checking for updates didn't work ({exc.__class__.__name__})."))
         finally:
@@ -1157,6 +1172,7 @@ class App:
         try:
             was_helper = self.config.get("helper") is True
             summary = self.syncer.run()
+            self.syncer.failures = 0
             self.problem = None
             self.config.set("last_sync", {"at": int(time.time()), "summary": summary})
             helper = self.config.get("helper") is True
@@ -1167,13 +1183,13 @@ class App:
         except Unlinked:
             self.config.token = None
             self.events.put(("log", "This PC was unlinked from your account. Link it again to keep syncing."))
-        except requests.RequestException:
+        except requests.RequestException as exc:
             self.problem = "Couldn't reach gargoyle.gg"
-            self.syncer.retry_at = time.time() + 60
+            self.syncer.backoff(exc)
         except Exception as exc:  # (shown rather than silently stopping the syncing)
             self.problem = "Sync didn't work"
             self.events.put(("log", f"Sync didn't work: {exc}"))
-            self.syncer.retry_at = time.time() + 60
+            self.syncer.backoff(exc)
         finally:
             self.busy = False
             self.events.put(("refresh",))

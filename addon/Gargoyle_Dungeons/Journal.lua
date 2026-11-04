@@ -20,6 +20,10 @@
 -- icons and tooltips and the abilities' text come from the game. Apart from that one map pin, it only shows things.
 local _, ns = ...
 local G = Gargoyle
+if not G or (G.API or 1) < 2 then -- (an older Gargoyle addon: it hasn't what this needs)
+  print("|cffd4a017Gargoyle|r: Gargoyle Dungeons needs a newer Gargoyle addon. Update it with the Gargoyle app (or turn Gargoyle Dungeons off).")
+  return
+end
 local Upgrades = G.Upgrades
 
 local Journal = {
@@ -150,12 +154,11 @@ local function itemInfo(id)
   local name, _, quality, _, _, _, _, _, _, icon
   if getInfo then name, _, quality, _, _, _, _, _, _, icon = getInfo(id) end
   if name then return name, quality, icon end
-  if not loading[id] and Item and Item.CreateFromItemID then
-    loading[id] = true
-    Item:CreateFromItemID(id):ContinueOnItemLoad(function()
+  if not loading[id] then
+    loading[id] = G.Items.Load(id, function()
       loading[id] = nil
       refreshSoon()
-    end)
+    end) or "unknown" -- (an item the game doesn't know: not asked again)
   end
 end
 

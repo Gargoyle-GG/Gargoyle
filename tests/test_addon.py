@@ -1573,7 +1573,7 @@ def tooltip_game(**kw):
     game = Game(tooltips=True, **kw)
     game.lua.execute("""
         fake.char.talents = { { { "Arcane Instability", 1, 1, 3, 3, 15058 } }, {},
-                              { { "Piercing Ice", 1, 1, 3, 3, 11151 }, { "Ice Shards", 1, 2, 5, 5, 11207 } } }
+                              { { "Ice Shards", 1, 2, 5, 5, 11207 } } }
         fake.stats.spellDamage[5] = 200   -- (Frost)
         fake.stats.spellCrit = 10
         fake.castTimes[116], fake.costs[116] = 1500, 25
@@ -1584,29 +1584,28 @@ def tooltip_game(**kw):
 def test_frostbolt_breakdown():
     game = tooltip_game()
     text = game.fake.spellTooltip(116)  # Frostbolt rank 1: 19 to 21, 40.7% of spell damage
-    # (19 + 81.4) x 1.06 Piercing Ice x 1.03 Arcane Instability; crits do 200% with Ice Shards.
+    # (19 + 81.4) x 1.03 Arcane Instability; crits do 200% with Ice Shards.
     assert text.splitlines() == [
         "A spell", " ", "Direct damage · Frost",
         "Base | 19 – 21",
         "Spell damage 200 × 40.7% | +81",
-        "Talents | × 1.09",
-        "  Arcane Instability +3%, Piercing Ice +6%",
-        "Total damage | 110 – 112",
-        "Crit 10% for 200% | avg 122",
-        "Average damage per cast | 122",
-        "Per second of casting (1.5 sec) | 81",
-        "Per mana (25 mana) | 4.87",
+        "Talents | × 1.03",
+        "  Arcane Instability +3%",
+        "Total damage | 103 – 105",
+        "Crit 10% for 200% | avg 115",
+        "Average damage per cast | 115",
+        "Per second of casting (1.5 sec) | 77",
+        "Per mana (25 mana) | 4.6",
     ]
 
 
 def test_talents_are_read_again_after_they_change():
     game = tooltip_game()
-    assert "Piercing Ice" in game.fake.spellTooltip(116)
+    assert "Crit 10% for 200%" in game.fake.spellTooltip(116)  # Ice Shards
     game.lua.execute("fake.char.talents[3] = {}")
-    assert "Piercing Ice" in game.fake.spellTooltip(116)  # (until the game says they changed)
+    assert "Crit 10% for 200%" in game.fake.spellTooltip(116)  # (until the game says they changed)
     game.fake.fire("TRAIT_CONFIG_UPDATED")
-    text = game.fake.spellTooltip(116)
-    assert "Piercing Ice" not in text and "Crit 10% for 150% | avg 110" in text
+    assert "Crit 10% for 150% | avg 110" in game.fake.spellTooltip(116)
 
 
 def test_spells_without_a_breakdown_and_secret_numbers_add_nothing():
@@ -2264,3 +2263,21 @@ def test_the_core_without_the_dungeons_addon():
     # Told once.
     again = Game(sync_lua(JOURNAL_API, {}), "GargoyleDB = { journal = { place = 36 }, toldDungeons = true }", dungeons=False)
     assert "its own addon" not in again.printed()
+
+
+def test_launch_safety_unknown_items_old_cores_and_a_broken_module():
+    # An item id the game doesn't know isn't asked for (asking raises an error in the game).
+    game = journal_game(before="C_Item.DoesItemExistByID = function(id) return id ~= 5191 end; fake.uncached[5191] = true; fake.uncached[872] = true")
+    waits = [w.id for w in game.fake.itemWaits.values()]
+    assert 872 in waits and 5191 not in waits
+    assert game.ns.Items.Load(5191, lambda: None) is False
+    # A module on an older core says so and stays out of the way.
+    old = Game(sync_lua(API, {}), None, journal=JOURNAL, before="", dungeons=False)
+    old.lua.execute("Gargoyle.API = nil")
+    old.load_module(DUNGEONS, "Gargoyle_Dungeons", old.lua.table(), {"Data\\Journal.lua": JOURNAL})
+    assert "Gargoyle Dungeons needs a newer Gargoyle addon" in old.printed() and old.ns.modules.journal is None
+    # One module's error at login doesn't stop the others, the options page or the minimap button.
+    crash = Game(sync_lua(API, {}), None, journal=JOURNAL, before="GetInstanceInfo = function() error('boom') end")
+    assert "Dungeons didn't start" in crash.printed() and crash.ns.optionsPanel is not None
+    crash.slash()
+    assert crash.fake.button("Raid signups") is not None

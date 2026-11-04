@@ -94,11 +94,16 @@ def test_reading_saved_variables():
 
 def test_reading_refuses_code():
     for bad in ("X = os.exit()", "X = function() end", "X = 1 + 2", "X = Y", "os.exit()", "X = { [{}] = 1 }",
-                "return 1", 'X = "unterminated', "X = { 1 2 }", 'X = "\\q"', 'X = "\\999"'):
-        with pytest.raises((LuaError, TypeError)):
+                "return 1", 'X = "unterminated', "X = { 1 2 }", 'X = "\\q"', 'X = "\\999"', "X = 0x" + "f" * 300):
+        with pytest.raises(LuaError):
             read_saved(bad)
     with pytest.raises(LuaError):
         read_saved("X = " + "{" * 40 + "}" * 40)
+    # A broken string full of backslash-newlines fails at once (no endless backtracking).
+    started = time.monotonic()
+    with pytest.raises(LuaError):
+        read_saved('X = "' + "a\\\n" * 60)
+    assert time.monotonic() - started < 1
 
 
 def test_outbox_from_saved_data():
@@ -961,7 +966,7 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         assert app.pump_after in root.tk.call("after", "info")
         app.report(RuntimeError, RuntimeError("boom"), None)
         assert "Something went wrong in the window (RuntimeError: boom)" in app.log_box.get("1.0", "end")
-        del app.refresh  # (back to the real one)
+        monkeypatch.delattr(app, "refresh")  # (back to the real one)
         # Syncing needs the addon there.
         game_folder.joinpath("Interface", "AddOns", "Gargoyle", "Gargoyle.toc").rename(game_folder / "moved.toc")
         app.sync(force=True)
@@ -1390,3 +1395,28 @@ def test_dungeons_and_loot_are_ticked_until_unticked(tmp_path):
     config.set("tooltips", True)
     assert not gargoyle_app.App.wanted(app, "dungeons") and gargoyle_app.App.wanted(app, "tooltips")
     assert {addon_install.ADDONS[k] for k, _, _ in addon_install.TICKED} <= addon_install.OPTIONAL
+
+
+def test_the_release_games_folder_comes_first(tmp_path):
+    install = tmp_path / "World of Warcraft"
+    for name in ("_classic_beta_", "_classic_era_", "_forever_"):
+        (install / name / "Interface" / "AddOns" / "Gargoyle").mkdir(parents=True)
+        (install / name / "Interface" / "AddOns" / "Gargoyle" / "Gargoyle.toc").write_text("## Version: 1.0.0")
+    assert [p.name for p in wow_paths.version_folders(install)] == ["_forever_", "_classic_beta_", "_classic_era_"]
+    assert wow_paths.game_folders(install)[0].name == "_forever_"
+    # A beta folder in use, with the release one beside it: the app says so (once).
+    assert wow_paths.release_instead(install / "_classic_beta_") == install / "_forever_"
+    assert wow_paths.release_instead(install / "_forever_") is None and wow_paths.release_instead(install / "_classic_era_") is None
+
+
+def test_failed_syncs_wait_longer_each_time(tmp_path, monkeypatch):
+    import random
+    import sync as sync_module
+    monkeypatch.setattr(random, "uniform", lambda a, b: 1.0)
+    syncer = Syncer(Config(tmp_path / "config.json"), log=lambda text: None)
+    waits = [round(syncer.backoff()) for _ in range(7)]
+    assert waits == [60, 120, 240, 480, 960, 1800, 1800]  # (30 min at most)
+    class Busy(Exception):
+        response = type("R", (), {"headers": {"Retry-After": "3000"}})()
+    assert round(syncer.backoff(Busy())) == 3000  # (the website asked for longer)
+    assert sync_module.BACKOFF_MOST == 1800

@@ -1,9 +1,9 @@
 {
  "files": {
-  "Gargoyle_Collector/Collector.lua": "4ed56001ba5aff0e5af7261eae9a1cb53e130cd959aae9255e88228ad7f3fe9a",
-  "Gargoyle_Collector/Gargoyle_Collector.toc": "d046076b62da9eac94aa860c5f0e46528fd752fd74422be465642e85e999fc14",
+  "Gargoyle_Collector/Collector.lua": "c14c43b0ae4554817f97e9e968f66458192e4f639865b5ae733aa4767fa59c8f",
+  "Gargoyle_Collector/Gargoyle_Collector.toc": "0c5c91e5376480d094cdf7a3dfe8a24712fc05f08bcf339957c48eb17fce94f4",
   "Gargoyle_Collector/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
  },
- "tag": "v1.8.0-addon1.0.1-tips1.0.4-col1.0.1-dun1.0.1-loot1.0.1",
- "version": "1.0.1"
+ "tag": "v1.8.2-addon1.0.2-tips1.0.5-col1.0.2-dun1.0.3-loot1.0.3",
+ "version": "1.0.2"
 }

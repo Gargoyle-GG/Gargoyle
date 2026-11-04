@@ -18,6 +18,9 @@ local ADDON, ns = ...
 
 ns.modules, ns.moduleOrder = {}, {}
 Gargoyle = ns -- (for the module addons)
+-- What the module addons may use: raised when the core gains something they need (they check it
+-- and say "update the Gargoyle addon" instead of breaking). 2: Items.Load, with 1.0.2.
+ns.API = 2
 
 -- The module addons, for Options to say how to get them when they aren't there.
 ns.MODULE_ADDONS = {
@@ -452,8 +455,11 @@ events:SetScript("OnEvent", function(_, event, name)
     end
     for _, key in ipairs(ns.moduleOrder) do
       local module = ns.modules[key]
-      if module.OnLogin then module:OnLogin() end
-      if ns.IsEnabled(key) and module.OnEnable then module:OnEnable() end
+      local ok, err = pcall(function()
+        if module.OnLogin then module:OnLogin() end
+        if ns.IsEnabled(key) and module.OnEnable then module:OnEnable() end
+      end)
+      if not ok then ns.say(string.format("%s didn't start: %s", module.title or key, tostring(err))) end
     end
     ns.CreateOptions()
     ns.CreateMinimapButton()

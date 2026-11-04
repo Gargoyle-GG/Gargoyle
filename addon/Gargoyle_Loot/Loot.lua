@@ -18,6 +18,10 @@
 -- link are the game's own, and only when you click.
 local _, ns = ...
 local G = Gargoyle
+if not G or (G.API or 1) < 2 then -- (an older Gargoyle addon: it hasn't what this needs)
+  print("|cffd4a017Gargoyle|r: Gargoyle Loot needs a newer Gargoyle addon. Update it with the Gargoyle app (or turn Gargoyle Loot off).")
+  return
+end
 local Upgrades, Wishlist, Items = G.Upgrades, G.Wishlist, G.Items
 
 local Loot = {
@@ -164,12 +168,11 @@ local function itemInfo(it)
   local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
   local name, _, quality, _, _, _, _, _, _, icon
   if getInfo then name, _, quality, _, _, _, _, _, _, icon = getInfo(it.id) end
-  if not name and not loading[it.id] and Item and Item.CreateFromItemID then
-    loading[it.id] = true
-    Item:CreateFromItemID(it.id):ContinueOnItemLoad(function()
+  if not name and not loading[it.id] then
+    loading[it.id] = Items.Load(it.id, function()
       loading[it.id] = nil
       refreshSoon()
-    end)
+    end) or "unknown" -- (an item the game doesn't know: not asked again)
   end
   return name or it.name, quality or it.q, icon
 end
@@ -396,7 +399,7 @@ local function status(character, list, title)
   end
   local text = string.format("%d item%s", n, n == 1 and "" or "s")
   if n == 0 and title ~= "Wishlist" then
-    return text .. ". Items above the beta's level cap, and from raids not released yet, aren't listed."
+    return text .. ". Items not seen in play yet, and from raids not released yet, aren't listed."
   end
   if missing then return text .. ". " .. missing end
   text = text .. (ups > 0 and string.format(", %s%d upgrade%s|r for %s", GREEN, ups, ups == 1 and "" or "s", Upgrades.Who(character))
@@ -443,7 +446,8 @@ function Loot:Refresh(fromMenu)
   ui.more:SetText(#entries > ROWS and (GREY .. "Scroll for more|r") or "")
   -- Its button: open the place in the Dungeons tab, or try the set on.
   local g = LISTS[s.cat] and s.index and LISTS[s.cat][s.index]
-  ui.openPlace:SetShown(PLACE_KINDS[s.cat] and g ~= nil and G.Journal ~= nil and G.Journal.Open ~= nil)
+  ui.openPlace:SetShown(PLACE_KINDS[s.cat] and g ~= nil and G.Journal ~= nil and G.Journal.Open ~= nil
+    and G.IsEnabled("journal"))  -- (not when Dungeons is turned off)
   ui.tryOn:SetShown(s.cat == "set" and g ~= nil)
   if not fromMenu then ui.who:GenerateMenu() end
   for key, box in pairs(ui.checks) do box:SetChecked(s[key] == true) end

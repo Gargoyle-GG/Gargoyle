@@ -12,6 +12,7 @@ import string
 from pathlib import Path
 
 VERSION_FOLDER = re.compile(r"^_\w+_$")
+RELEASE_FOLDER = "_forever_"  # WoW Forever's (from its launch, 4 November 2026)
 COMMON = ["Program Files (x86)/World of Warcraft", "Program Files/World of Warcraft", "World of Warcraft",
           "Games/World of Warcraft", "Warcraft/World of Warcraft", "Blizzard/World of Warcraft",
           "Battle.net/World of Warcraft"]
@@ -65,7 +66,11 @@ def version_folders(install):
     install = Path(install)
     if VERSION_FOLDER.match(install.name) and install.is_dir():
         return [install]
-    return sorted(p for p in install.iterdir() if p.is_dir() and VERSION_FOLDER.match(p.name)) if install.is_dir() else []
+    if not install.is_dir():
+        return []
+    # WoW Forever's own folder first (the beta's, _classic_beta_, only after it).
+    return sorted((p for p in install.iterdir() if p.is_dir() and VERSION_FOLDER.match(p.name)),
+                  key=lambda p: (p.name != RELEASE_FOLDER, p.name))
 
 
 def game_folders(install):
@@ -108,3 +113,13 @@ def interface_version(folder):
 def saved_files(folder):
     """The Gargoyle addon's saved data, one file per WoW account on this PC."""
     return sorted((Path(folder) / "WTF" / "Account").glob("*/SavedVariables/Gargoyle.lua"))
+
+
+def release_instead(folder):
+    """The release game's folder next to a beta one the app still uses (…\\_classic_beta_ with a
+    …\\_forever_ beside it), or None."""
+    folder = Path(folder)
+    release = folder.parent / RELEASE_FOLDER
+    if folder.name != RELEASE_FOLDER and "beta" in folder.name and release.is_dir():
+        return release
+    return None

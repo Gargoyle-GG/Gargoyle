@@ -134,7 +134,7 @@ def test_search_and_filters():
     click_row(game, "Raids")
     assert names(game) == ["Rockslicer"] and "Search: raids" in game.texts()
     search(game, "westfall")  # (not from a raid)
-    assert names(game) == [] and "0 items. Items above the beta's level cap" in game.texts()
+    assert names(game) == [] and "0 items. Items not seen in play yet" in game.texts()
 
 
 def test_stars_clicks_tooltips_and_sets():

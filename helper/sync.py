@@ -17,6 +17,7 @@ It only ever touches the Gargoyle addons' saved data (read only), the Gargoyle_S
 """
 import json
 import os
+import random
 import re
 import threading
 import time
@@ -35,6 +36,7 @@ from lua_io import LuaError, read_saved
 from version import ADDON_SIGNING_KEY, APP_VERSION, RELEASES, SIGNED
 
 REFRESH_SECONDS = 300  # fetch raids at least this often
+BACKOFF_FIRST, BACKOFF_MOST = 60, 1800  # after a failed sync: 1 min, then twice as long each time, up to 30 min
 SENT_KEEP_DAYS = 30
 BATCH = 50  # the website takes up to 50 signups at once
 RAID_BATCH = 20  # up to 20 raids made in game
@@ -61,6 +63,7 @@ class Syncer:
         self.seen = {}  # saved file -> when it last changed, as last checked
         self.last_refresh = 0
         self.retry_at = 0  # after a failed try (offline), not before this
+        self.failures = 0  # (failed tries in a row: each waits longer)
         self.talking = threading.Lock()  # (syncing, linking and update checks run side by side: one request at a time)
         # What the window shows: the GargoyleSync table last written for the game, and the
         # signups, raids made and picked characters last read from the game's saved files.
@@ -369,6 +372,19 @@ class Syncer:
             except OSError:
                 pass
         return stamps != self.seen
+
+    def backoff(self, exc=None):
+        """After a failed sync: wait longer each time (1 min, 2, 4... up to 30), a little more or
+        less for each PC so they don't all come back at once, and at least as long as the
+        website asks (Retry-After)."""
+        self.failures += 1
+        wait = min(BACKOFF_MOST, BACKOFF_FIRST * 2 ** (self.failures - 1)) * random.uniform(0.75, 1.25)
+        response = getattr(exc, "response", None)
+        asked = response.headers.get("Retry-After", "") if response is not None else ""
+        if asked.isdigit():
+            wait = max(wait, min(int(asked), 2 * BACKOFF_MOST))
+        self.retry_at = time.time() + wait
+        return wait
 
     def due(self):
         if time.time() < self.retry_at:

@@ -91,7 +91,7 @@ def to_lua(value, depth=0):
 TOKEN = re.compile(r"""
     (?P<space>\s+)
   | (?P<comment>--[^\n]*)
-  | (?P<string>"(?:[^"\\\n]|\\.|\\\n)*")
+  | (?P<string>"(?:[^"\\\n]|\\.)*")
   | (?P<number>-?(?:0[xX][0-9a-fA-F]+|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?))
   | (?P<name>[A-Za-z_][A-Za-z0-9_]*)
   | (?P<punct>[{}\[\]=,;])
@@ -213,11 +213,14 @@ def read_saved(text):
     """{variable name: value} from a SavedVariables file's text."""
     if len(text) > MAX_BYTES:
         raise LuaError("file too large")
-    parser, found = _Parser(text), {}
-    while parser.peek()[0] is not None:
-        kind, name = parser.take()
-        if kind != "name" or name in LUA_KEYWORDS:
-            raise LuaError(f"expected a variable name, found {name!r}")
-        parser.take("=")
-        found[name] = parser.value(0)
+    try:
+        parser, found = _Parser(text), {}
+        while parser.peek()[0] is not None:
+            kind, name = parser.take()
+            if kind != "name" or name in LUA_KEYWORDS:
+                raise LuaError(f"expected a variable name, found {name!r}")
+            parser.take("=")
+            found[name] = parser.value(0)
+    except (OverflowError, TypeError) as e:  # (a number too big for a float; a table as a key)
+        raise LuaError(f"can't read it: {e}") from None
     return found
