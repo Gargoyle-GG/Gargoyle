@@ -9,10 +9,17 @@ How releases are protected:
 - Every release is built by GitHub from the code in this repository
   ([release.yml](.github/workflows/release.yml)), with its build tools pinned to exact,
   checksummed versions.
+- GitHub signs a record of where each release file was built (its build provenance): this
+  repository's release workflow, the release's tag and commit, and one of GitHub's own
+  machines. You can check any download yourself with the
+  [GitHub CLI](https://cli.github.com/):
+  `gh attestation verify GargoyleSetup.exe -R Gargoyle-GG/Gargoyle`
 - The app only installs an addon update if every file matches a manifest signed with
   Gargoyle's release key ([signing.py](helper/signing.py)). That key is kept offline, never on
   GitHub, so even someone who got into GitHub couldn't push an addon update to players.
 - The app runs only one thing it downloads: a new version's installer, when you click
   **Update now**, and only if it's exactly the installer GitHub built for that release, as
   signed with the same release key after the build (its size and SHA-256 in
-  `release/app-manifest.json`). Unsigned, it shows the download instead.
+  `release/app-manifest.json`). Unsigned, it shows the download instead. The installer is only
+  signed once its build provenance checks out: built by the release workflow, from exactly
+  the commit that was tagged, on GitHub's own machines.
