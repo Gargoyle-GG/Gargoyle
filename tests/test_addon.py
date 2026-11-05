@@ -464,7 +464,31 @@ local talentName = C_Spell.GetSpellName
 C_Spell.GetSpellName = function(id) return fake.spellNames[id] or talentName(id) end
 C_Spell.GetSpellSubtext = function() return "Rank 1" end
 GetSpellBaseCooldown = function() return 0, 1500 end
-C_Traits.GetTraitDescription = function(entry, rank) return "Rank " .. rank .. " of talent " .. entry end
+-- A talent's text comes with its spell: one in fake.uncachedSpells isn't loaded yet (the
+-- game has no description for it, and its tooltip says only "Passive") until
+-- fake.loadSpells(). fake.noTraitDescription: only its tooltip has its text.
+fake.uncachedSpells, fake.spellWaits = {}, {}
+local function unloaded(entry) return fake.uncachedSpells[C_Traits.GetDefinitionInfo(entry).spellID] end
+C_Traits.GetTraitDescription = function(entry, rank)
+  if not (unloaded(entry) or fake.noTraitDescription) then return "Rank " .. rank .. " of talent " .. entry end
+end
+C_TooltipInfo.GetTraitEntry = function(entry, rank)
+  local lines = { { leftText = "Passive", leftColor = { r = 1, g = 1, b = 1 } } }
+  if not unloaded(entry) then
+    table.insert(lines, { leftText = "Rank " .. rank .. " from the tooltip of " .. entry, leftColor = { r = 1, g = 0.82, b = 0 } })
+  end
+  table.insert(lines, { leftText = "Requires 5 points in Arcane", leftColor = { r = 1, g = 0.13, b = 0.13 } })
+  return { lines = lines }
+end
+C_Spell.IsSpellDataCached = function(id) return not fake.uncachedSpells[id] end
+Spell = { CreateFromSpellID = function(_, id)
+  return { ContinueOnSpellLoad = function(_, fn) table.insert(fake.spellWaits, fn) end }
+end }
+function fake.loadSpells()
+  local waits = fake.spellWaits
+  fake.uncachedSpells, fake.spellWaits = {}, {}
+  for _, fn in ipairs(waits) do fn() end
+end
 C_Container = {
   GetContainerNumSlots = function(bag) return fake.bags[bag] and 16 or 0 end,
   GetContainerItemID = function(bag, slot) return fake.bags[bag] and fake.bags[bag][slot] end,
@@ -2029,6 +2053,71 @@ def test_the_collector_notes_your_gear_spells_and_talents():
 
 def GargoyleCollectorSummary(game):
     return game.lua.eval("GargoyleCollector.Summary()")
+
+
+def talent_ranks(game):
+    tree = collected(game).talents.MAGE
+    return tree and {t.name: list(t.ranks.values()) for n in tree.nodes.values() for t in n.talents.values()}
+
+
+def test_the_collector_waits_for_the_game_to_load_talent_text():
+    # (until it has, a talent's tooltip says only "Passive": 1.0.2 noted that as its text)
+    game = collector(before=COLLECTOR_ITEMS + "; fake.uncachedSpells = { [11210] = true, [11070] = true }")
+    settle(game)
+    assert talent_ranks(game) is None
+    game.fake.loadSpells()
+    settle(game)
+    ranks = talent_ranks(game)
+    assert ranks["Arcane Subtlety"] == ["Rank 1 of talent 1001", "Rank 2 of talent 1001"]
+    assert ranks["Improved Frostbolt"][4] == "Rank 5 of talent 3001"
+
+
+def test_talent_text_the_game_never_loads_is_left_out_not_guessed():
+    game = collector(before=COLLECTOR_ITEMS + "; fake.uncachedSpells = { [11210] = true }")
+    settle(game)
+    assert talent_ranks(game) is None
+    game.fake.now = NOW + 61  # (a minute on, and it never loaded)
+    game.fake.fire("TRAIT_CONFIG_UPDATED")
+    settle(game)
+    ranks = talent_ranks(game)
+    assert ranks["Arcane Subtlety"] == [False, False] and ranks["Arcane Focus"][0] == "Rank 1 of talent 1002"
+
+
+def test_without_the_games_description_a_talents_text_is_its_tooltips_gold_line():
+    game = collector(before=COLLECTOR_ITEMS + "; fake.noTraitDescription = true")
+    settle(game)
+    assert talent_ranks(game)["Arcane Subtlety"] == ["Rank 1 from the tooltip of 1001", "Rank 2 from the tooltip of 1001"]
+
+
+def test_the_collector_never_notes_where_your_hearthstone_goes():
+    game = collector(before=COLLECTOR_ITEMS + """
+      GetBindLocation = function() return "Tarren Mill" end
+      fake.book = { 133, 556 }
+      fake.spellNames[556] = "Astral Recall"
+      fake.spellText[556] = "Yanks you back to Tarren Mill.  Speak to an Innkeeper to change your home location."
+      fake.items[6948].flavor = "Use: Returns you to Tarren Mill."
+      fake.bags[0] = { 6948 }""")
+    settle(game)
+    db = collected(game)
+    assert db.spells[556].description == "Yanks you back to your home location.  Speak to an Innkeeper to change your home location."
+    assert db["items"][6948].lines[4].left == "Use: Returns you to your home location."
+    assert "Tarren Mill" not in lua_table(game, db)
+
+
+def test_an_update_reads_the_talents_again():
+    game = collector()
+    settle(game)
+    # As 1.0.2 left it: "Passive" for each rank, and the tree checked in this version of the game.
+    game.lua.execute("""
+      for _, node in pairs(GargoyleCollectorDB.talents.MAGE.nodes) do
+        for _, t in pairs(node.talents) do for r in pairs(t.ranks) do t.ranks[r] = "Passive" end end
+      end
+      GargoyleCollectorDB.sums.talents.MAGE, GargoyleCollectorDB.checked.talentText = 12345, nil""")
+    assert talent_ranks(game)["Arcane Subtlety"] == ["Passive", "Passive"]
+    game = collector(saved="GargoyleCollectorDB = " + lua_table(game, collected(game)), now=NOW + 100)
+    settle(game)
+    assert talent_ranks(game)["Arcane Subtlety"] == ["Rank 1 of talent 1001", "Rank 2 of talent 1001"]
+    assert collected(game).talents.MAGE.seen == NOW + 100
 
 
 def test_the_collector_only_asks_about_what_you_come_across():

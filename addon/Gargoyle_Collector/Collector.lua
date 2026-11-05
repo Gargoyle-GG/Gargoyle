@@ -8,8 +8,10 @@
 --   Spells: your spellbook, the spells a trainer offers (with the level and cost), and spells
 --     whose tooltip you look at: name, rank, text, cast time, cost, range and cooldown.
 --   Talents: your class's whole talent tree: every talent with each rank's text, where it
---     sits, and what it needs.
--- Nothing about you or other players is noted but your class (for its talents and spells).
+--     sits, and what it needs. (The game is asked to load each talent's text first, as its
+--     own talent window does before showing a talent.)
+-- Nothing about you or other players is noted but your class (for its talents and spells):
+-- where your hearthstone goes, which the game puts in some texts, is noted as "your home location".
 --
 -- Kept light and polite: it only reads what the game has already shown you or is loading to
 -- show you (it never runs through item or spell numbers, which would make the game ask the
@@ -72,6 +74,19 @@ local function text(v, limit)
   return v
 end
 
+-- Where your hearthstone takes you is about you: the game puts it in some texts (Astral
+-- Recall, the Hearthstone), and there it's noted as "your home location", as the website says.
+local function impersonal(v)
+  local home = GetBindLocation and GetBindLocation()
+  if type(v) ~= "string" or secret(v) or type(home) ~= "string" or home == "" or secret(home) then return v end
+  local at = v:find(home, 1, true)
+  while at do
+    v = v:sub(1, at - 1) .. "your home location" .. v:sub(at + #home)
+    at = v:find(home, at + #"your home location", true)
+  end
+  return v
+end
+
 local function itemID(link)
   return type(link) == "string" and not secret(link) and tonumber(link:match("item:(%d+)")) or nil
 end
@@ -105,8 +120,8 @@ local function colorOf(color)
 end
 
 -- A tooltip's lines, as the game's tooltip data has them ({ left, right, color }), without
--- showing a tooltip (so no other addon's additions get in).
-local function lines(data)
+-- showing a tooltip (so no other addon's additions get in). (`limit`: letters kept of each.)
+local function lines(data, limit)
   if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
   local out = {}
   for _, line in ipairs(data.lines) do
@@ -119,7 +134,7 @@ local function lines(data)
           end
         end
       end
-      local left, right = text(line.leftText), text(line.rightText)
+      local left, right = text(impersonal(line.leftText), limit), text(impersonal(line.rightText))
       if left or right then out[#out + 1] = { left = left, right = right, color = colorOf(line.leftColor) } end
     end
   end
@@ -161,6 +176,9 @@ local function loadDB()
   local _, gameBuild = GetBuildInfo()
   build = tonumber(gameBuild) or 0
   if saved.checked.build ~= build then saved.checked = { build = build } end -- (a new version of the game: look again)
+  if saved.checked.talentText ~= 2 then -- (talents read again, for 1.0.3's talent text: only one that reads differently is noted)
+    saved.checked.talents, saved.checked.talentText = nil, 2
+  end
   for _, kind in ipairs(KINDS) do
     saved[kind] = tableOr(saved[kind])
     saved.sums[kind] = tableOr(saved.sums[kind])
@@ -280,7 +298,7 @@ local function readSpell(id)
   end
   name = text(name, 100) or text(spellCall("GetSpellName", nil, id), 100)
   if not name then return nil end -- (not a spell)
-  local description = text(spellCall("GetSpellDescription", "GetSpellDescription", id), 1000)
+  local description = text(impersonal(spellCall("GetSpellDescription", "GetSpellDescription", id)), 1000)
   if not description and C_Spell and C_Spell.IsSpellDataCached and not C_Spell.IsSpellDataCached(id)
       and Spell and Spell.CreateFromSpellID and not loading["spell" .. id] then
     loading["spell" .. id] = true -- (its text isn't loaded yet: read it again once it is)
@@ -307,6 +325,49 @@ local function readSpell(id)
   return entry
 end
 
+-- Talents' spells the game is loading (a talent's text comes with its spell), and when it
+-- was first asked to: the tree is read once they've all loaded, or after a minute without
+-- the ones that haven't.
+local talentSpells, talentAsked = 0, nil
+
+-- Whether the game has a talent's spell loaded. If not, it's asked to load it, as its own
+-- talent window does before showing a talent's tooltip.
+local function spellLoaded(id)
+  if not (C_Spell and C_Spell.IsSpellDataCached and Spell and Spell.CreateFromSpellID) or C_Spell.IsSpellDataCached(id) then
+    return true
+  end
+  local key = "talent" .. id
+  if not loading[key] then
+    loading[key], talentSpells = true, talentSpells + 1
+    local ok = pcall(function()
+      Spell:CreateFromSpellID(id):ContinueOnSpellLoad(function()
+        loading[key], talentSpells = nil, talentSpells - 1
+        if talentSpells == 0 then C.Want("talents", playerClass()) end
+      end)
+    end)
+    if not ok then
+      loading[key], talentSpells = nil, talentSpells - 1
+      return true
+    end
+  end
+  return false
+end
+
+-- A talent's text for one rank: the game's description of it, or else the gold lines of the
+-- talent's tooltip (its other lines are never its text: Passive, Instant, a cast time, a cost
+-- or range). False when the game has neither (its spell hasn't loaded).
+local function rankText(entryID, rank)
+  local description = C_Traits.GetTraitDescription and text(impersonal(C_Traits.GetTraitDescription(entryID, rank)), 1000)
+  if description then return description end
+  local get, ok, data = C_TooltipInfo and C_TooltipInfo.GetTraitEntry, false, nil
+  if get then ok, data = pcall(get, entryID, rank) end
+  local gold = {}
+  for _, line in ipairs(ok and lines(data, 1000) or {}) do
+    if line.color == "gold" and line.left and not line.right then gold[#gold + 1] = line.left end
+  end
+  return #gold > 0 and text(table.concat(gold, "\n"), 1000) or false
+end
+
 -- The class's talent tree, whole: its groups (the classic three trees), and every talent
 -- with where it sits, its arrows, what it needs, and each rank's text.
 local function readTalents()
@@ -315,6 +376,7 @@ local function readTalents()
   local config = configID and traits and traits.GetConfigInfo(configID)
   local treeID = config and type(config.treeIDs) == "table" and config.treeIDs[1]
   if not number(treeID) then return nil end
+  local patient, waiting = not talentAsked or time() - talentAsked < 60, false
   local tree = { tree = treeID, groups = {}, gates = {}, nodes = {} }
   for _, group in ipairs(traits.GetGroupDisplayInfoByTreeID and traits.GetGroupDisplayInfoByTreeID(treeID) or {}) do
     tree.groups[#tree.groups + 1] = { id = number(group.groupID), order = number(group.orderIndex), name = text(group.name, 60) }
@@ -348,19 +410,22 @@ local function readTalents()
         local talent = { id = entryID, spell = spell, max = number(info and info.maxRanks) or entry.max, ranks = {},
           name = text(definition and definition.overrideName, 100) or text(spell and spellCall("GetSpellName", nil, spell), 100),
           icon = number(definition and definition.overrideIcon) or number(spell and spellCall("GetSpellTexture", "GetSpellTexture", spell)) }
-        for rank = 1, math.min(talent.max or 1, 10) do
-          local description = traits.GetTraitDescription and text(traits.GetTraitDescription(entryID, rank), 1000)
-          if not description then
-            local tip = tooltip("GetTraitEntry", entryID, rank)
-            description = tip and tip[#tip].left
-          end
-          talent.ranks[rank] = description or false
+        if spell and not spellLoaded(spell) then waiting = true end
+        if not (waiting and patient) then
+          for rank = 1, math.min(talent.max or 1, 10) do talent.ranks[rank] = rankText(entryID, rank) end
         end
         entry.talents[#entry.talents + 1] = talent
         if spell then C.Want("spells", spell) end
       end
       tree.nodes[#tree.nodes + 1] = entry
     end
+  end
+  if waiting and patient then
+    if not talentAsked then
+      talentAsked = time()
+      C_Timer.After(61, function() C.Want("talents", playerClass()) end) -- (in case one never loads)
+    end
+    return "loading"
   end
   return #tree.nodes > 0 and tree or nil
 end
