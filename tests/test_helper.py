@@ -574,11 +574,17 @@ def test_update_now_runs_only_the_signed_installer(tmp_path, release_key):
     files = {"versions.json": json.dumps(versions).encode(), "GargoyleSetup.exe": setup,
              "app-manifest.json": body, "app-manifest.sig": release_key(body)}
     config = Config(tmp_path / "config.json")
-    launched = []
+    launched, banner = [], []
+
+    class Window(types.SimpleNamespace):
+        def __setattr__(self, name, value):
+            if name == "updating":
+                banner.append(value)  # (what the banner said, in turn)
+            super().__setattr__(name, value)
 
     def window(changed=None):
-        w = types.SimpleNamespace(events=queue.Queue(), config=config, versions=versions, app_offer=None,
-                                  update_busy=True, updating=None, next_version_check=time.time() + 6 * 3600)
+        w = Window(events=queue.Queue(), config=config, versions=versions, app_offer=None,
+                   update_busy=True, updating=None, next_version_check=time.time() + 6 * 3600)
         w.retry_app_soon = lambda: gargoyle_app.App.retry_app_soon(w)
         w.syncer = Syncer(config, http=FakeGitHub({**files, **(changed or {})}), log=lambda text: None)
         gargoyle_app.App._check_app(w)
@@ -593,6 +599,7 @@ def test_update_now_runs_only_the_signed_installer(tmp_path, release_key):
     w = window()
     assert w.app_offer == app
     update(w)
+    assert banner[-2:] == ["Downloading Gargoyle 99.0.0… 100%", "Installing Gargoyle 99.0.0… It closes and opens again by itself."]
     (args,) = launched
     assert args[1:] == ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/fromapp=1"]
     assert args[0] == str(tmp_path / "GargoyleUpdate" / "GargoyleSetup-99.0.0.exe")
@@ -949,6 +956,20 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         assert "2 minutes ago" in shown and "Nothing waiting" in shown
         assert "Molten Core" in shown and "Not signed up" in shown and "Tomorrow" in shown
         assert not app.start_hidden and app.banner.winfo_manager() == ""
+        # The Game card: Check for updates, and a bar while the addons are checked or updated.
+        game = app.cards["game"]
+        assert "Check for updates" in shown and game.bar.winfo_manager() == ""
+        app.events.put(("progress", 0.5, "Updating the Loot addon… (2 of 3)"))
+        app.pump()
+        shown = texts(root)
+        assert "Updating the Loot addon… (2 of 3)" in shown and "Check for updates" not in shown
+        assert game.bar.winfo_manager() == "pack" and game.fraction == 0.5
+        app.events.put(("progress", None, None))
+        app.checked_by_hand = time.time()  # (Check for updates found nothing new)
+        app.pump()
+        shown = texts(root)
+        assert game.bar.winfo_manager() == "" and "Check for updates" in shown
+        assert any(t.startswith("Up to date: checked just now.") for t in shown)
         # The raid links to its signup on the website.
         opened = []
         monkeypatch.setattr(gargoyle_app.webbrowser, "open", opened.append)
@@ -1163,29 +1184,39 @@ def test_the_app_installs_ticked_damage_tooltips(tmp_path, game_folder, release_
     config = Config(tmp_path / "config.json")
     config.data.update(game_folder=str(game_folder))
     app = types.SimpleNamespace(events=queue.Queue(), config=config, checking=True, next_version_check=0, versions={},
-                                app_offer=None)
-    app._update_addon = lambda *args: gargoyle_app.App._update_addon(app, *args)
-    app._check_app = lambda: gargoyle_app.App._check_app(app)
-    app.retry_app_soon = lambda: gargoyle_app.App.retry_app_soon(app)
-    app.wanted = lambda key: gargoyle_app.App.wanted(app, key)
+                                app_offer=None, install_problem=None, checked_by_hand=0)
+    for method in ("_addon_update", "_install_update", "_check_app", "retry_app_soon", "wanted"):
+        setattr(app, method, getattr(gargoyle_app.App, method).__get__(app))
+    progress = []
 
-    def check(tips_version, install=False):
+    def check(tips_version, install=False, manual=False):
         app.syncer = Syncer(config, http=github(tips_version), log=lambda text: None)
-        gargoyle_app.App._check_versions(app, install)
+        gargoyle_app.App._check_versions(app, install, manual)
         said = []
+        progress.clear()
         while not app.events.empty():
             event = app.events.get()
-            said += [event[1]] if event[0] == "log" else []
+            said += [event[1]] if event[0] in ("log", "notify") else []
+            if event[0] == "progress":
+                progress.append(event[1:])
         return " ".join(said), addon_install.installed_version(game_folder, addon_install.TOOLTIPS)
 
     assert check("1.0.0") == ("", None)  # (not ticked)
+    assert progress == [(None, None)]  # (a check on its own: no bar, only the "done" that clears one)
     config.set("tooltips", True)
     said, version = check("1.0.0")
     assert version == "1.0.0" and "Installed the Damage tooltips addon 1.0.0." in said
+    # The Game card's bar, from the start of the download to the end, then cleared.
+    assert progress[0] == (0, "Installing the Damage tooltips addon…") and progress[-2][0] == 1
+    assert [f for f, _ in progress[:-1]] == sorted(f for f, _ in progress[:-1]) and progress[-1] == (None, None)
     config.set("auto_update", False)
     assert check("1.1.0")[1] == "1.0.0"  # (updates switched off: waits for a click)
+    said, version = check("1.1.0", manual=True)  # (Check for updates: still only says it's out)
+    assert version == "1.0.0" and app.checked_by_hand and progress[0] == (0, "Checking for updates…")
     said, version = check("1.1.0", install=True)
     assert version == "1.1.0" and "Updated the Damage tooltips addon to 1.1.0." in said
+    assert "Updating the Damage tooltips addon…" in [text for _, text in progress]
+    assert said.count("If the game is open, restart it to load it.") == 2  # (the log, and one notice)
 
 
 def zip_files(data):
@@ -1374,13 +1405,17 @@ def test_update_checks_can_be_switched_off(tmp_path, monkeypatch):
     config = Config(tmp_path / "config.json")
     app = types.SimpleNamespace(config=config, checking=False, _check_versions=None)
     gargoyle_app.App.check_versions(app)
-    assert started == [(False,)]  # (on unless switched off)
+    assert started == [(False, False)]  # (on unless switched off)
     config.set("update_checks", False)
     app.checking = False
     gargoyle_app.App.check_versions(app)
-    assert started == [(False,)]  # off: GitHub isn't asked on its own...
+    assert started == [(False, False)]  # off: GitHub isn't asked on its own...
     gargoyle_app.App.check_versions(app, install=True)
-    assert started == [(False,), (True,)]  # ...only when you click to install
+    assert started == [(False, False), (True, False)]  # ...only when you click to install
+    app.checking = False
+    app.check_versions = gargoyle_app.App.check_versions.__get__(app)
+    gargoyle_app.App.check_now(app)
+    assert started[-1] == (False, True)  # ...or click Check for updates
 
 
 def test_dungeons_and_loot_are_ticked_until_unticked(tmp_path):

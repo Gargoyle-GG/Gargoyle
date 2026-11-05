@@ -147,13 +147,14 @@ class Syncer:
             raise signing.SignatureError("the signed installer is another release's")
         return signed
 
-    def download(self, url, limit):
-        """A file from a release (its address from addon_install), up to `limit` bytes."""
+    def download(self, url, limit, progress=None):
+        """A file from a release (its address from addon_install), up to `limit` bytes.
+        `progress(bytes so far)` is called as it comes in."""
         if not url.startswith(RELEASES + "/download/"):
             raise addon_install.InstallError("that isn't a Gargoyle release")
-        return self.fetch(url, limit)
+        return self.fetch(url, limit, progress)
 
-    def fetch(self, url, limit):
+    def fetch(self, url, limit, progress=None):
         """A file from GitHub's releases, which never gets the account token. GitHub sends
         downloads on to its file servers; anywhere else is refused."""
         with self.talking:
@@ -167,6 +168,8 @@ class Syncer:
                 data += chunk
                 if len(data) > limit:
                     raise addon_install.InstallError("the download is bigger than expected")
+                if progress:
+                    progress(len(data))
             return bytes(data)
 
     def unlock_collector(self, code):

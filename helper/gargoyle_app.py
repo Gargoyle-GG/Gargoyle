@@ -43,6 +43,8 @@ UNSIGNED_RETRY_SECONDS = 300  # a new app whose installer isn't signed yet (or n
 UNSIGNED_RETRIES = 12  # (for an hour; then the usual checks)
 VERSION_RETRY_SECONDS = 600  # (sooner after a check that didn't get through, e.g. starting with Windows before the internet is up)
 UPDATE_WAIT_SECONDS = 180  # how long "Update now" waits for the installer to close the app
+ADDON_NAMES = {"addon": "Gargoyle", "dungeons": "Dungeons", "loot": "Loot", "tooltips": "Damage tooltips",
+               "collector": "Data Collector"}  # (addon_install.ADDONS' keys: "the Loot addon")
 SHOW_FILE = "show"  # left in the settings folder by a second copy of the app: "show the window"
 QUIT_FILE = "quit"  # left there by the installer before it updates or removes the app
 
@@ -167,7 +169,7 @@ class ScrollList(tk.Frame):
 
 class Card(tk.Frame):
     """One of the status boxes along the top: a coloured dot, a heading, what's what, and
-    maybe a button."""
+    maybe a button (or, while something's under way, how far along it is)."""
 
     def __init__(self, parent, heading):
         super().__init__(parent, bg=PANEL, highlightthickness=1, highlightbackground=BORDER, padx=px(12), pady=px(10))
@@ -181,16 +183,37 @@ class Card(tk.Frame):
         self.sub = label(self, font=SMALL, fg=DIM)
         self.sub.pack(fill="x")
         self.action = None
+        self.bar = tk.Canvas(self, height=px(6), bg=PANEL, highlightthickness=0, bd=0)
+        self.bar.bind("<Configure>", lambda e: self._draw_bar())
+        self.fraction = None
         self.bind("<Configure>", lambda e: self._wrap(e.width))
 
     def _wrap(self, width):
         for part in (self.value, self.sub):
             part.configure(wraplength=max(80, width - px(26) - 10))  # (less the padding and the labels' own edges)
 
-    def show(self, state, value, sub="", action=None, primary=False):
+    def _draw_bar(self):
+        self.bar.delete("all")
+        width, height = self.bar.winfo_width(), self.bar.winfo_height()
+        self.bar.create_rectangle(0, 0, width - 1, height - 1, fill=INSET, outline=BORDER_STRONG)
+        if self.fraction:
+            self.bar.create_rectangle(1, 1, max(2, round((width - 2) * min(1.0, self.fraction))), height - 2,
+                                      fill=GOLD, outline="", tags="done")
+
+    def show(self, state, value, sub="", action=None, primary=False, progress=None):
+        """`progress`: how far along something is (0 to 1), shown as a bar in place of the button."""
         self.dot.itemconfigure("dot", fill=STATE_COLORS[state])
         self.value.configure(text=value)
         self.sub.configure(text=sub)
+        if progress is not None:
+            action = None
+            self.fraction = progress
+            if not self.bar.winfo_manager():
+                self.bar.pack(fill="x", pady=(px(8), px(2)))
+            self._draw_bar()
+        elif self.bar.winfo_manager():
+            self.bar.pack_forget()
+            self.fraction = None
         wanted = action[0] if action else None
         if self.action is not None and getattr(self.action, "text_key", None) != (wanted, primary):
             self.action.destroy()
@@ -219,6 +242,8 @@ class App:
         self.problem = None  # why the last sync didn't work, if it didn't
         self.install_problem = None  # why the last Install / Update click didn't work, if it didn't
         self.install_wanted = False  # (Install clicked while a version check was already running)
+        self.progress = None  # (how far along, what's under way) while the addons are checked or updated
+        self.checked_by_hand = 0  # when Check for updates last found the addons up to date
         self.app_offer = None  # a newer app's installer, signed: "Update now"
         self.updating = None  # what "Update now" is doing ("Downloading…"), or why it stopped
         self.update_busy = False
@@ -495,8 +520,12 @@ class App:
 
         # Game
         game = self.cards["game"]
+        check = ("Check for updates", self.check_now)
         if not folder:
             game.show("problem", "Game not found", "Choose the World of Warcraft folder.", ("Choose…", self.choose_folder))
+        elif self.progress is not None:
+            fraction, doing = self.progress
+            game.show("waiting", f"Addon {installed}" if installed else "Addon not installed", doing, progress=fraction)
         elif dead_link:
             game.show("problem", "Addon folder is a broken link",
                       self.install_problem or "It points to a folder that's gone. Install puts a fresh copy there.",
@@ -505,13 +534,20 @@ class App:
             game.show("waiting", "Addon not installed", self.install_problem or f"Game folder: {folder.name}",
                       ("Install the addon", self.install_addon), primary=True)
         elif linked_folder:
-            game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone){with_tips}")
+            game.show("ok", f"Addon {installed}", f"{folder.name} (a linked folder: the app leaves it alone){with_tips}",
+                      check)
         elif update or extra_update:
             out = f"Version {update} is out." if update else extra_update
             game.show("waiting", f"Addon {installed}", self.install_problem or out, ("Update", self.install_addon),
                       primary=True)
         else:
-            game.show("ok", f"Addon {installed}", f"Game folder: {folder.name}{with_tips}")
+            if self.install_problem:  # (Check for updates didn't get through)
+                note = self.install_problem + " "
+            elif time.time() - self.checked_by_hand < 600:
+                note = f"Up to date: checked {ago(self.checked_by_hand)}. "
+            else:
+                note = ""
+            game.show("ok", f"Addon {installed}", f"{note}Game folder: {folder.name}{with_tips}", check)
         self.folder_text.configure(text=str(folder) if folder else "Not found yet")
 
         # The Data Collector (Settings)
@@ -678,6 +714,8 @@ class App:
                 self.root.clipboard_append(rest[0])
             elif kind == "notify":
                 self.notify(rest[0])
+            elif kind == "progress":  # (the addons being checked or updated: how far along, and what's under way)
+                self.progress = None if rest[0] is None else (rest[0], rest[1])
             elif kind == "open":
                 self.open()
             elif kind == "sync":
@@ -795,7 +833,15 @@ class App:
         put = self.events.put
         try:
             self.syncer.signed_app(app)  # (checked again: still the signed one)
-            data = self.syncer.download(app["url"], self_update.MAX_INSTALLER)
+            size, shown = max(1, app.get("size") or 1), [0]
+
+            def moving(got):  # (how far along, every 5%)
+                percent = min(100, got * 100 // size)
+                if percent >= shown[0] + 5:
+                    shown[0] = percent
+                    self.updating = f"Downloading Gargoyle {app['version']}… {percent}%"
+                    put(("refresh",))
+            data = self.syncer.download(app["url"], self_update.MAX_INSTALLER, progress=moving)
             path = self_update.save(data, app, temp)
             self.updating = f"Installing Gargoyle {app['version']}… It closes and opens again by itself."
             put(("log", f"Installing Gargoyle {app['version']}. The app closes and opens again by itself."))
@@ -923,19 +969,32 @@ class App:
     def install_addon(self):
         self.check_versions(install=True)
 
-    def check_versions(self, install=False):
-        # Checks switched off in Settings: GitHub is only asked when you click to install.
-        if not install and self.config.get("update_checks", True) is False:
+    def check_now(self):
+        """Check for updates: GitHub is asked straight away (even with the checks switched off)."""
+        self.check_versions(manual=True)
+
+    def check_versions(self, install=False, manual=False):
+        # Checks switched off in Settings: GitHub is only asked when you click (Install, Update
+        # or Check for updates).
+        if not (install or manual) and self.config.get("update_checks", True) is False:
             return
         if self.checking:
             if install:  # (a check is under way: the install follows it)
                 self.install_wanted = True
             return
         self.checking = True
-        threading.Thread(target=self._check_versions, args=(install,), daemon=True).start()
+        threading.Thread(target=self._check_versions, args=(install, manual), daemon=True).start()
 
-    def _check_versions(self, install):
+    def _check_versions(self, install, manual=False):
+        """Asks GitHub what the latest release has: a newer app is offered, and newer addons
+        go in (on a click, or by themselves unless that's switched off), with a bar on the
+        Game card showing how far along it is. `manual`: Check for updates was clicked."""
         put = self.events.put
+        asked = install or manual  # (a click: it says what it's doing, and any problem)
+        done = []
+        if asked:
+            self.install_problem = None
+            put(("progress", 0, "Checking for updates…"))
         self.next_version_check = time.time() + VERSION_RETRY_SECONDS  # (unless it gets through)
         try:
             self.versions = self.syncer.versions()
@@ -944,29 +1003,39 @@ class App:
             folder = self.syncer.game_folder
             if not folder:
                 return
-            if self._update_addon(folder, "addon", install):
-                self.syncer.last_refresh = 0  # sync now (the new copy needs its raid data)
-            # The optional addons: when ticked in Settings (and once Gargoyle is there).
-            for key, _, _ in addon_install.TICKED:
-                if self.wanted(key) and addon_install.installed_version(folder) is not None:
-                    self._update_addon(folder, key, install)
-            # The Data Collector: for helpers (likewise).
-            if self.config.get("helper") is True and addon_install.installed_version(folder) is not None:
-                self._update_addon(folder, "collector", install)
-            if install:
-                self.install_problem = None
+            todo = [self._addon_update(folder, "addon", install)]
+            if todo[0] or addon_install.installed_version(folder) is not None:  # (the others once Gargoyle's there)
+                # The optional addons when ticked in Settings, and the Data Collector for helpers.
+                todo += [self._addon_update(folder, key, install) for key, _, _ in addon_install.TICKED if self.wanted(key)]
+                if self.config.get("helper") is True:
+                    todo.append(self._addon_update(folder, "collector", install))
+            todo = [offer for offer in todo if offer]
+            for n, offer in enumerate(todo):
+                done.append(self._install_update(folder, offer, n, len(todo)))
+                if offer["key"] == "addon":
+                    self.syncer.last_refresh = 0  # sync now (the new copy needs its raid data)
+            if manual:
+                self.checked_by_hand = time.time()
+                put(("log", "Checked for updates."))
         except requests.RequestException:
-            if install:
+            if asked:
                 self.install_problem = "Couldn't reach GitHub. Try again in a moment."
-                put(("log", "Couldn't reach GitHub to get the addon. Try again in a moment."))
+                put(("log", "Couldn't reach GitHub to get the addon. Try again in a moment." if install
+                     else "Couldn't reach GitHub to check for updates. Try again in a moment."))
         except (addon_install.InstallError, signing.SignatureError, OSError, ValueError) as exc:  # (ValueError: an answer that made no sense)
-            if install:
+            if asked:
                 self.install_problem = f"Couldn't install it: {exc}."
             put(("log", f"Couldn't install the addon: {exc}."))
             self.next_version_check = time.time() + VERSION_RETRY_SECONDS  # (tried again soon, not in 6 hours)
         except Exception as exc:  # (anything else: said, rather than the checks quietly stopping)
             put(("log", f"Checking for updates didn't work ({exc.__class__.__name__})."))
         finally:
+            if done:  # (one notice for them all)
+                verb = "Updated" if all(text.startswith("Updated") for _, _, text in done) else "Installed"
+                put(("notify", done[0][2] + " If the game is open, restart it to load it." if len(done) == 1 else
+                     f"{verb} {len(done)} addons ({', '.join(f'{name} {version}' for name, version, _ in done)}). "
+                     "If the game is open, restart it to load them."))
+            put(("progress", None, None))
             self.checking = False
             put(("refresh",))
             if getattr(self, "install_wanted", False):
@@ -1004,38 +1073,50 @@ class App:
         """Is Update now on its way (the installed app, still asking whether it's signed)?"""
         return installed_app() and not self.updating and 0 < getattr(self, "quick_retries", 0) < UNSIGNED_RETRIES
 
-    def _update_addon(self, folder, key, install):
-        """Installs or updates one addon ("addon": Gargoyle, "dungeons", "loot", "tooltips": Damage
-        tooltips, "collector": the Data Collector) if the release has a newer one. True if it did."""
+    def _addon_update(self, folder, key, install):
+        """The release's newer copy of one addon ("addon": Gargoyle, "dungeons", "loot",
+        "tooltips": Damage tooltips, "collector": the Data Collector) when it's to go in now,
+        else None (it's up to date, or it waits for a click)."""
         put = self.events.put
-        name = addon_install.ADDONS[key]
-        title = {"addon": "Gargoyle addon", "dungeons": "Dungeons addon", "loot": "Loot addon",
-                 "tooltips": "Damage tooltips addon", "collector": "Data Collector addon"}[key]
+        title = ADDON_NAMES[key] + " addon"
         offer = addon_install.offer(self.versions, key)
-        current = addon_install.installed_version(folder, name)
+        current = addon_install.installed_version(folder, addon_install.ADDONS[key])
         if not offer:
             if install:
                 put(("log", f"The {title} download isn't available right now. Try again later."))
-            return False
+            return None
         if not addon_install.newer(offer["version"], current):
             if install:
                 put(("log", f"The {title} is up to date ({current})."))
-            return False
-        linked = addon_install.is_linked(addon_install.addons(folder) / name)
+            return None
+        linked = addon_install.is_linked(addon_install.addons(folder) / offer["name"])
         auto_off = self.config.get("auto_update", True) is False
         # Without a click: never a linked copy, Gargoyle's first install waits for one, and
         # updates wait when they're switched off. (Ticked optional addons, and a helper's Data
         # Collector, go in straight away.)
         if not install and (linked or (current is None and key == "addon") or (current is not None and auto_off)):
-            return False
+            return None
+        return {**offer, "current": current}
+
+    def _install_update(self, folder, offer, n=0, count=1):
+        """Installs an addon from _addon_update, the Game card's bar moving along as it comes
+        in (it's update n + 1 of `count`). (Its name, the version installed, and what was done.)"""
+        put = self.events.put
+        name = ADDON_NAMES[offer["key"]]
+        doing = (f"{'Installing' if offer['current'] is None else 'Updating'} the {name} addon…"
+                 + (f" ({n + 1} of {count})" if count > 1 else ""))
+        size = max(1, offer.get("size") or 1)
+        put(("progress", n / count, doing))
         signed = self.syncer.signed_addon(offer)  # (Gargoyle's release key signed it, or nothing's installed)
-        data = self.syncer.download(offer["url"], addon_install.MAX_DOWNLOAD)
+        data = self.syncer.download(offer["url"], addon_install.MAX_DOWNLOAD,
+                                    progress=lambda got: put(("progress", (n + 0.9 * min(1.0, got / size)) / count, doing)))
         addon_install.check_download(data, offer)
-        version = addon_install.install(folder, data, signed, name)
-        text = f"Installed the {title} {version}." if current is None else f"Updated the {title} to {version}."
+        version = addon_install.install(folder, data, signed, offer["name"])
+        put(("progress", (n + 1) / count, doing))
+        text = (f"Installed the {name} addon {version}." if offer["current"] is None
+                else f"Updated the {name} addon to {version}.")
         put(("log", text + " If the game is open, restart it to load it."))
-        put(("notify", text + " If the game is open, restart it to load it."))
-        return True
+        return name, version, text
 
     def wanted(self, key):
         """Is an optional addon ("dungeons", "loot", "tooltips") ticked? (Its default until it's

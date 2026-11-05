@@ -65,6 +65,9 @@ what you can read here.
 - When a new version of the app is out, **Update now** downloads its installer and runs it
   quietly, but only if it's the installer signed with that same release key. The installer
   closes the app, updates it and opens it again, keeping your settings.
+- It looks for updates when it starts and every 6 hours (unless that's switched off in
+  Settings). **Check for updates** on the Game card looks straight away, and a bar there shows
+  how far along an addon update is.
 - It never touches the running game, its memory, or any other game files, and it never plays
   for you. The addon only shows things and records your own clicks.
 - It talks to `gargoyle.gg` (your raids and signups) and to GitHub (updates), nothing else.
