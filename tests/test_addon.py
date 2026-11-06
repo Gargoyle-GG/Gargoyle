@@ -13,6 +13,7 @@ PROJECT = Path(__file__).resolve().parent.parent
 ADDON = PROJECT / "addon" / "Gargoyle"
 DUNGEONS = PROJECT / "addon" / "Gargoyle_Dungeons"
 LOOT = PROJECT / "addon" / "Gargoyle_Loot"
+FISHING = PROJECT / "addon" / "Gargoyle_Fishing"
 TOOLTIPS = PROJECT / "addon" / "Gargoyle_Tooltips"
 COLLECTOR = PROJECT / "addon" / "Gargoyle_Collector"
 sys.path.insert(0, str(PROJECT / "helper"))
@@ -23,18 +24,28 @@ NOW = 1_800_000_000
 FAKE_GAME = r"""
 fake = { widgets = {}, events = {}, printed = {}, timers = {}, now = %d, player = "Jainamage" }
 local methods = {}
-local NOOP = { "SetSize", "SetWidth", "SetHeight", "ClearAllPoints", "SetAllPoints", "SetFrameStrata",
+local NOOP = { "ClearAllPoints", "SetAllPoints", "SetFrameStrata",
   "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "StartMoving", "StopMovingOrSizing",
   "LockHighlight", "UnlockHighlight", "SetJustifyH", "SetJustifyV", "SetHighlightTexture", "SetColorTexture",
-  "EnableMouseWheel", "SetAutoFocus", "SetMaxLetters", "SetTextColor", "SetWordWrap", "SetToplevel", "SetTitle",
+  "SetAutoFocus", "SetMaxLetters", "SetTextColor", "SetToplevel", "SetTitle",
   "SetPortraitToAsset", "SetTexture", "SetTexCoord", "SetBlendMode", "SetVertexColor", "SetFrameLevel",
   "RegisterForClicks", "SetMaxLines", "AddMaskTexture", "SetLooping", "SetFromAlpha", "SetToAlpha", "SetDuration",
   "SetSmoothing", "Raise", "SetAtlas" }
 for _, name in ipairs(NOOP) do methods[name] = function() end end
 function methods:SetPoint(...) self.point = { ... } end
 function methods:SetAllPoints(target) self.over = target end
-function methods:GetWidth() return 140 end
-function methods:GetHeight() return 140 end
+-- Sizes: what was set (140 when nothing was: anchors decide it in the game), and OnSizeChanged
+-- as the game calls it.
+local function resized(self)
+  if self.scripts.OnSizeChanged then self.scripts.OnSizeChanged(self, self:GetWidth(), self:GetHeight()) end
+end
+function methods:SetSize(w, h) self.width, self.height = w, h; resized(self) end
+function methods:SetWidth(w) self.width = w; resized(self) end
+function methods:SetHeight(h) self.height = h; resized(self) end
+function methods:GetWidth() return self.width or 140 end
+function methods:GetHeight() return self.height or 140 end
+function methods:EnableMouseWheel(on) self.wheel = on end
+function methods:SetWordWrap(on) self.wordWrap = on end
 function methods:GetCenter() return 500, 400 end
 function methods:GetEffectiveScale() return 1 end
 function methods:CreateMaskTexture() return fake.new("MaskTexture", nil, self) end
@@ -42,7 +53,29 @@ function methods:CreateAnimationGroup() return fake.new("AnimationGroup", nil, s
 function methods:CreateAnimation() return fake.new("Animation", nil, self) end
 function methods:Play() self.playing = true end
 function methods:Stop() self.playing = false end
-function methods:GetStringHeight() return 12 end
+-- A text's height: 12 a line, its letters 6 wide, wrapped to its width when it has one.
+function methods:GetStringHeight()
+  if not self.width or self.width <= 0 or self.wordWrap == false then return 12 end
+  return 12 * math.max(1, math.ceil(#(self.text or "") * 6 / self.width))
+end
+-- Scroll frames: the child scrolls by up to how much taller it is than the frame.
+function methods:SetScrollChild(child) self.child = child end
+function methods:GetScrollChild() return self.child end
+function methods:GetVerticalScrollRange() return math.max(0, (self.child and self.child:GetHeight() or 0) - self:GetHeight()) end
+function methods:GetVerticalScroll() return self.offset or 0 end
+function methods:SetVerticalScroll(offset) self.offset = offset end
+-- The game's scroll frame templates: a scroll bar on the right, and the mouse wheel scrolls
+-- (as ScrollUtil.InitScrollFrameWithScrollBar does for ScrollFrameTemplate).
+local SCROLL_TEMPLATES = { ScrollFrameTemplate = true, UIPanelScrollFrameTemplate = true }
+local function fromTemplate(w, template)
+  if template == "UICheckButtonTemplate" then w.width, w.height = 32, 32 end -- (CheckButtonTemplates.xml)
+  if not (template and SCROLL_TEMPLATES[template]) then return end
+  w.ScrollBar = fake.new("EventFrame", nil, w)
+  w.ScrollBar:SetPoint("TOPLEFT", w, "TOPRIGHT", 6, 2)
+  w.scripts.OnMouseWheel = function(self, delta)
+    self:SetVerticalScroll(math.min(self:GetVerticalScrollRange(), math.max(0, self:GetVerticalScroll() - delta * 30)))
+  end
+end
 -- Dropdowns (the game's DropdownButton): a menu of radio choices, made by a function. The
 -- text shown is the chosen one's.
 local function showChoice(w)
@@ -160,7 +193,11 @@ function fake.texts()
   return table.concat(out, "\n")
 end
 
-CreateFrame = function(kind, name, parent) return fake.new(kind, name, parent) end
+CreateFrame = function(kind, name, parent, template)
+  local w = fake.new(kind, name, parent)
+  fromTemplate(w, template)
+  return w
+end
 UIParent = fake.new("Frame")
 Minimap = fake.new("Minimap")
 fake.cursor = { 0, 0 }
@@ -528,7 +565,7 @@ API = {  # what /api/app/sync answers (see app_api.py)
 
 class Game:
     def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None, collector=False,
-                 dungeons=True, loot=False, loot_data=None):
+                 dungeons=True, loot=False, loot_data=None, fishing=False):
         self.lua = lua51.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(FAKE_GAME)
         self.fake = self.lua.globals().fake
@@ -555,6 +592,9 @@ class Game:
         self.lns = self.lua.table()  # (Gargoyle_Loot's own)
         if loot:
             self.load_module(LOOT, "Gargoyle_Loot", self.lns, {"Data\\Loot.lua": loot_data})
+        self.fns = self.lua.table()  # (Gargoyle_Fishing's own)
+        if fishing:
+            self.load_module(FISHING, "Gargoyle_Fishing", self.fns, {})
         if tooltips:  # (the game loads it after Gargoyle: its name comes later)
             self.tips_ns = self.lua.table()
             toc = (TOOLTIPS / "Gargoyle_Tooltips.toc").read_text(encoding="utf-8").splitlines()
@@ -725,13 +765,70 @@ def test_features_turn_on_and_off():
     assert not game.lua.globals().GargoyleWindow.IsShown(game.lua.globals().GargoyleWindow)
 
 
+def test_the_options_page_scrolls_and_its_texts_wrap():
+    """Options > AddOns > Gargoyle: more checkboxes than the options window has room for, so the
+    page scrolls (a scroll bar and the mouse wheel), and the texts wrap to its width, each row
+    below the one before however many lines its texts took."""
+    game = Game(sync_lua(API, {}), tooltips=True)
+    ns, same = game.ns, game.lua.eval("function(a, b) return a == b end")
+    scroll, page = ns.optionsScroll, ns.optionsPage
+    assert scroll.kind == "ScrollFrame" and same(scroll.GetScrollChild(scroll), page) and same(page.parent, scroll)
+    assert same(scroll.parent, ns.optionsPanel) and scroll.ScrollBar is not None and scroll.wheel is True
+    # The options window gives the panel its space (here 600 by 320): the page is taller, so it scrolls.
+    scroll.SetSize(scroll, 570, 320)
+    assert page.width == 570 and page.height > 320 and scroll.GetVerticalScrollRange(scroll) > 0
+    scroll.scripts.OnMouseWheel(scroll, -1)
+    assert scroll.GetVerticalScroll(scroll) == 30
+    scroll.scripts.OnMouseWheel(scroll, -100)
+    assert scroll.GetVerticalScroll(scroll) == scroll.GetVerticalScrollRange(scroll)  # (to the end, not past it)
+    scroll.scripts.OnMouseWheel(scroll, 100)
+    assert scroll.GetVerticalScroll(scroll) == 0
+
+    def rows():
+        """Each checkbox on the page, top to bottom: its y, and its label's and line's under it (or None)."""
+        found = []
+        for box in [w for w in game.fake.widgets.values() if w.kind == "CheckButton" and same(w.parent, page)]:
+            label = next(w for w in game.fake.widgets.values() if w.kind == "FontString" and w.point and same(w.point[2], box))
+            about = next((w for w in game.fake.widgets.values() if w.kind == "FontString" and w.point
+                          and same(w.point[2], label)), None)
+            found.append((box.point[5], label, about))
+        return sorted(found, key=lambda row: -row[0])
+
+    def check(width):
+        found = rows()
+        assert len(found) == 10  # (4 features, 5 more options, damage tooltips)
+        for (y, label, about), (below, _, _) in zip(found, found[1:]):
+            for text in (label, about) if about else (label,):
+                assert text.wordWrap is True and 40 <= text.width <= width - 16 - 32 - 2 - 16  # (wraps inside the page)
+            height = 9 + label.GetStringHeight(label) + (3 + about.GetStringHeight(about) if about else 0)
+            assert below <= y - max(32, height), label.text  # (the next row starts below this one's texts)
+        last = found[-1]
+        assert page.height >= -last[0] + 32
+        return found
+
+    wide = check(570)
+    raids = next(about for _, label, about in wide if label.text == "Raid signups")
+    lines = raids.GetStringHeight(raids) // 12
+    # A narrower space (a bigger UI scale): the texts wrap to more lines and the rows move down.
+    tall = page.height
+    scroll.SetSize(scroll, 300, 320)
+    narrow = check(300)
+    assert page.width == 300 and page.height > tall and raids.GetStringHeight(raids) // 12 > lines
+    assert narrow[-1][0] < wide[-1][0]
+    # Shown again (the options window opened): laid out again, the checkboxes as they are now.
+    height = page.height
+    ns.optionBoxes.raids.SetChecked(ns.optionBoxes.raids, False)
+    ns.optionsPanel.scripts.OnShow(ns.optionsPanel)
+    assert ns.optionBoxes.raids.GetChecked(ns.optionBoxes.raids) is True and page.height == height
+
+
 def test_scrolling_and_picking_a_raid():
     raids = [{"id": i, "title": f"Raid {i:02d}", "start": NOW + i * 3600, "size": 20, "notes": "", "signups": []}
              for i in range(1, 15)]
     game = Game(sync_lua({**API, "guilds": [{**API["guilds"][0], "raids": raids}]}, {}))
     game.slash()
     assert "Raid 09" in game.texts() and "Raid 10" not in game.texts()
-    wheel = next(w for w in game.fake.widgets.values() if w.scripts["OnMouseWheel"])
+    wheel = next(w for w in game.fake.widgets.values() if w.scripts["OnMouseWheel"] and w.kind != "ScrollFrame")  # (not the options page)
     wheel.scripts["OnMouseWheel"](wheel, -10)  # scroll down, past the end
     text = game.texts()
     assert "Raid 14" in text and "Raid 05" not in text
@@ -1985,7 +2082,7 @@ def test_the_real_journal_data_loads_and_scrolls():
     game.slash()
     game.click("Dungeons")
     assert "Ragefire Chasm" in game.texts() and "Naxxramas" not in game.texts()
-    wheel = [w for w in game.fake.widgets.values() if w.scripts["OnMouseWheel"] and w.IsVisible(w)][0]  # (the list)
+    wheel = [w for w in game.fake.widgets.values() if w.scripts["OnMouseWheel"] and w.IsVisible(w) and w.kind != "ScrollFrame"][0]  # (the list)
     for _ in range(10):
         wheel.scripts["OnMouseWheel"](wheel, -1)
     assert "Naxxramas" in game.texts()

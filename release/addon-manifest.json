@@ -1,8 +1,8 @@
 {
  "files": {
-  "Gargoyle/Core.lua": "5e5d057823733ea103b071f5605c46c52dbbdcaee75a8f9f26e0c3cc385033fd",
+  "Gargoyle/Core.lua": "f1ad85c5275c3ba97ca6ed7b898469d1b92bbecb8cd296f515a7f74859079ae5",
   "Gargoyle/Debug.lua": "2381692f73b045d99035ec3ad5470ff18af973575e91efa0be0fb8a7a3286802",
-  "Gargoyle/Gargoyle.toc": "0894851ffd96f9ed348a0c32388be8fe1d03eab04c57fcd9dd4a571ea482eceb",
+  "Gargoyle/Gargoyle.toc": "4068244fcd2a7390d90289b210ef40f2586d0ea46d5d2a7f6e3032d94904c608",
   "Gargoyle/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224",
   "Gargoyle/Media/Portrait.tga": "6b52200f15c92fdffe1c1afc62e67c983ea586baacaa126bc7db92455097edd8",
   "Gargoyle/Media/Round.tga": "0321c1da27a4445d53deb145b6d973345c8cd82465455719fd2d7430af9ca3e1",
@@ -15,6 +15,6 @@
   "Gargoyle/Upgrades.lua": "a642788d0d1d43783b85bede1dbe81d1e04a06e199c8bf864f07d1febc0298d9",
   "Gargoyle/Window.lua": "439afe44653380a70181ba8c1adaf6f81d6172f1dbc8d972181aec640c5deee5"
  },
- "tag": "v1.9.0-addon1.0.2-tips1.0.5-col1.0.3-dun1.0.3-loot1.0.3",
- "version": "1.0.2"
+ "tag": "v1.9.1-addon1.0.3-tips1.0.5-col1.0.3-dun1.0.3-loot1.0.3-fish1.0.0",
+ "version": "1.0.3"
 }

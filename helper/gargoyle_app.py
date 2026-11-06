@@ -43,8 +43,8 @@ UNSIGNED_RETRY_SECONDS = 300  # a new app whose installer isn't signed yet (or n
 UNSIGNED_RETRIES = 12  # (for an hour; then the usual checks)
 VERSION_RETRY_SECONDS = 600  # (sooner after a check that didn't get through, e.g. starting with Windows before the internet is up)
 UPDATE_WAIT_SECONDS = 180  # how long "Update now" waits for the installer to close the app
-ADDON_NAMES = {"addon": "Gargoyle", "dungeons": "Dungeons", "loot": "Loot", "tooltips": "Damage tooltips",
-               "collector": "Data Collector"}  # (addon_install.ADDONS' keys: "the Loot addon")
+ADDON_NAMES = {"addon": "Gargoyle", "dungeons": "Dungeons", "loot": "Loot", "fishing": "Fishing",
+               "tooltips": "Damage tooltips", "collector": "Data Collector"}  # (addon_install.ADDONS' keys: "the Loot addon")
 SHOW_FILE = "show"  # left in the settings folder by a second copy of the app: "show the window"
 QUIT_FILE = "quit"  # left there by the installer before it updates or removes the app
 
@@ -425,6 +425,8 @@ class App:
             "dungeons": "Every dungeon and raid's bosses, loot, abilities and quests, and a map of where they are.",
             "loot": "Every item in the game and where it comes from, with search, your upgrades and a wishlist you "
                     "share with the website.",
+            "fishing": "Cast Fishing with one key (set it in Key Bindings > Gargoyle), and press it again to reel "
+                       "in (or right-click the bobber). A louder splash while you fish helps you hear the bite.",
             "tooltips": "A breakdown of your spells' damage and healing on their tooltips.",
             "collector": "For Gargoyle's helpers: notes the items, spells and talents your game shows you. It's "
                          "installed while your account is a helper.",
@@ -1199,7 +1201,7 @@ class App:
         return installed_app() and not self.updating and 0 < getattr(self, "quick_retries", 0) < UNSIGNED_RETRIES
 
     def _addon_update(self, folder, key, install):
-        """The release's newer copy of one addon ("addon": Gargoyle, "dungeons", "loot",
+        """The release's newer copy of one addon ("addon": Gargoyle, "dungeons", "loot", "fishing",
         "tooltips": Damage tooltips, "collector": the Data Collector) when it's to go in now,
         else None (it's up to date, or it waits for a click)."""
         put = self.events.put
@@ -1244,7 +1246,7 @@ class App:
         return name, version, text
 
     def wanted(self, key):
-        """Is an optional addon ("dungeons", "loot", "tooltips") ticked? (Its default until it's
+        """Is an optional addon ("dungeons", "loot", "fishing", "tooltips") ticked? (Its default until it's
         been ticked or unticked.)"""
         choice = self.config.get(key)
         default = next(d for k, _, d in addon_install.TICKED if k == key)

@@ -1,0 +1,10 @@
+{
+ "files": {
+  "Gargoyle_Fishing/Bindings.xml": "8d9ab52ffc231c63d193911176659bfdf357661e76eca7dd08d27533e94bc83c",
+  "Gargoyle_Fishing/Fishing.lua": "a9ab460f72d5aab6edca83a57d12a20c8b0594cb72c3bac7d6226c42c3660881",
+  "Gargoyle_Fishing/Gargoyle_Fishing.toc": "4bb879479395c070039ab67bf9240b2b5dbe6136325c76ccdaa2de448293dc87",
+  "Gargoyle_Fishing/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
+ },
+ "tag": "v1.9.1-addon1.0.3-tips1.0.5-col1.0.3-dun1.0.3-loot1.0.3-fish1.0.0",
+ "version": "1.0.0"
+}

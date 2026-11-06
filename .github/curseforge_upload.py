@@ -1,7 +1,7 @@
 """Uploads a release's addons to CurseForge (run by release.yml once the release is posted).
 
 Only the addons whose version changed since the last release go up, each to its own CurseForge
-project, for WoW Forever's game version. Dungeons and Loot list Gargoyle (the core) as a
+project, for WoW Forever's game version. Dungeons, Loot and Fishing list Gargoyle (the core) as a
 required dependency, Damage tooltips as an optional one. The Data Collector, for Gargoyle's
 helpers only, isn't on CurseForge. The zips are the release's own (the same signed files the
 Gargoyle app installs).
@@ -9,7 +9,7 @@ Gargoyle app installs).
 Nothing happens until the repository has both (set by its owner on GitHub):
   - the secret CURSEFORGE_API_TOKEN (a CurseForge author API token), and
   - the variable CURSEFORGE_PROJECTS: {"addon": {"id": 123, "slug": "gargoyle"}, "dungeons": {...},
-    "loot": {...}, "tooltips": {...}}, each project's id and slug on CurseForge.
+    "loot": {...}, "fishing": {...}, "tooltips": {...}}, each project's id and slug on CurseForge.
 CURSEFORGE_GAME_VERSION (optional) is the game version's name there (default 1.60.1, WoW Forever).
 
     python .github/curseforge_upload.py <dist folder> [<previous release's versions.json>]
@@ -22,8 +22,10 @@ import uuid
 from pathlib import Path
 
 API = "https://wow.curseforge.com/api"
-TITLES = {"addon": "Gargoyle", "dungeons": "Gargoyle Dungeons", "loot": "Gargoyle Loot", "tooltips": "Gargoyle Damage Tooltips"}
-NEEDS_CORE = {"dungeons": "requiredDependency", "loot": "requiredDependency", "tooltips": "optionalDependency"}
+TITLES = {"addon": "Gargoyle", "dungeons": "Gargoyle Dungeons", "loot": "Gargoyle Loot", "fishing": "Gargoyle Fishing",
+          "tooltips": "Gargoyle Damage Tooltips"}
+NEEDS_CORE = {"dungeons": "requiredDependency", "loot": "requiredDependency", "fishing": "requiredDependency",
+              "tooltips": "optionalDependency"}
 
 
 def call(path, token, body=None, content_type=None, opener=urllib.request.urlopen):

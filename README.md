@@ -25,6 +25,14 @@ site for WoW Forever. Free, like everything on Gargoyle.
   wishlist, which is on your Gargoyle account too. Ctrl-click an item to try it on in the
   game's own dressing room, Shift-click to link it in your chat box, as in your bags: only
   when you click.
+- **Fishing** (`addon/Gargoyle_Fishing`), another module addon, makes fishing easy: cast
+  Fishing with one key (set it in Key Bindings > Gargoyle), and press it again to reel in (or
+  right-click the bobber, as always). While you fish that key is the game's Interact With Target,
+  with its reach set to 30 yards, put back as it was when fishing ends (the one-key option, on to
+  start with). A louder splash option (also on) turns sound effects up and music and ambient
+  sounds down while you fish, so you can hear the bite, and puts them back too. Every cast is your own key press, through the game's secure
+  action button: it never watches for a bite or casts by itself, and does nothing in combat.
+  The app installs it if you tick it.
 - **Damage tooltips** (`addon/Gargoyle_Tooltips`), a separate addon you can choose to install,
   add a breakdown of your spells' damage and healing to their tooltips: base numbers, your
   spell power's share, your talents, crit, and the average per cast, per second and per mana.
@@ -52,8 +60,8 @@ what you can read here.
 - It writes your guild's raids into a small data addon (`Interface\AddOns\Gargoyle_Sync`), which
   the game loads the next time you log in or `/reload`.
 - It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`), and the addons you
-  tick in its Addons tab (Dungeons and Loot, ticked to start with, and Damage tooltips:
-  `Interface\AddOns\Gargoyle_Dungeons`, `Gargoyle_Loot` and `Gargoyle_Tooltips`), from these
+  tick in its Addons tab (Dungeons and Loot, ticked to start with, and Fishing and Damage tooltips:
+  `Interface\AddOns\Gargoyle_Dungeons`, `Gargoyle_Loot`, `Gargoyle_Fishing` and `Gargoyle_Tooltips`), from these
   releases, but only if every file matches a manifest signed with Gargoyle's release key, which
   is kept offline and never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking one removes
   that addon's folder again. For helpers, it installs the Data Collector

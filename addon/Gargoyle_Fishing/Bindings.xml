@@ -1,0 +1,5 @@
+<Bindings>
+	<!-- The game loads an addon's Bindings.xml by itself. "Cast Fishing" (Fishing.lua names it) clicks
+	     Gargoyle Fishing's secure button, which casts Fishing: Key Bindings > Gargoyle. -->
+	<Binding name="CLICK GargoyleFishingButton:LeftButton" category="BINDING_HEADER_GARGOYLE"></Binding>
+</Bindings>

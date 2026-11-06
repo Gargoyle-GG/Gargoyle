@@ -771,10 +771,11 @@ def test_building_the_addon_zip(tmp_path):
     assert addon_install.offer({"tag": tag, "addon": entry})["version"] == build.addon_version()
     assert tag == (f"v{build.app_version()}-addon{build.addon_version()}-tips{build.addon_version('tooltips')}"
                    f"-col{build.addon_version('collector')}-dun{build.addon_version('dungeons')}"
-                   f"-loot{build.addon_version('loot')}")
-    assert len(tag) <= 60  # (apps before 1.8.0 read no longer tag)
+                   f"-loot{build.addon_version('loot')}-fish{build.addon_version('fishing')}")
+    assert len(tag) <= 100 and addon_install.TAG.match(tag)  # (apps from 1.8.0 read tags up to 100 letters)
     # The module addons: likewise, each in its own folder.
-    for key, folder, file in (("dungeons", "Gargoyle_Dungeons", "Data/Journal.lua"), ("loot", "Gargoyle_Loot", "Data/Loot.lua")):
+    for key, folder, file in (("dungeons", "Gargoyle_Dungeons", "Data/Journal.lua"), ("loot", "Gargoyle_Loot", "Data/Loot.lua"),
+                              ("fishing", "Gargoyle_Fishing", "Bindings.xml")):
         with zipfile.ZipFile(build.build_addon(tmp_path / "a", key)) as z:
             names = z.namelist()
             assert f"{folder}/{folder}.toc" in names and f"{folder}/{file}" in names
@@ -975,8 +976,10 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
                 for key, (row, what, detail) in app.addon_rows.items()}
         assert rows["addon"] == ("Installed", f"Version {installed}", "pack")  # (not checked yet)
         assert rows["dungeons"][0] == rows["loot"][0] == "Not installed yet"  # (ticked until unticked)
-        assert rows["tooltips"][0] == "Not installed" and rows["collector"][2] == ""  # (helpers only)
-        assert set(app.optional_on) == {"dungeons", "loot", "tooltips"} and app.optional_on["loot"].get()
+        assert rows["tooltips"][0] == rows["fishing"][0] == "Not installed" and rows["collector"][2] == ""  # (helpers only)
+        assert set(app.optional_on) == {"dungeons", "loot", "fishing", "tooltips"} and app.optional_on["loot"].get()
+        assert not app.optional_on["fishing"].get()  # (unticked until ticked)
+        assert "Cast Fishing with one key (set it in Key Bindings > Gargoyle), and press it again to reel in (or right-click the bobber). A louder splash while you fish helps you hear the bite." in shown
         assert app.addons_text.cget("text") == "Not checked for updates yet." and app.update_all_button.winfo_manager() == ""
         # Settings scrolls (there's more than a small window shows).
         assert isinstance(app.settings, gargoyle_app.ScrollList) and app.tray_box.master is app.settings.inner
@@ -1100,7 +1103,7 @@ def test_a_release_only_builds_with_the_signed_addon(tmp_path, monkeypatch, rele
     collector = build.addon_manifest(tag, "collector")
     (tmp_path / "release" / "collector-manifest.json").write_bytes(collector)
     (tmp_path / "release" / "collector-manifest.sig").write_bytes(release_key(collector))
-    for key in ("dungeons", "loot"):
+    for key in ("dungeons", "loot", "fishing"):
         with pytest.raises(SystemExit, match=f"No signed {key}-manifest.json"):
             build.check_signed(tag)
         module = build.addon_manifest(tag, key)
@@ -1461,7 +1464,7 @@ def test_dungeons_and_loot_are_ticked_until_unticked(tmp_path):
     config = Config(tmp_path / "config.json")
     app = types.SimpleNamespace(config=config)
     wanted = {key: gargoyle_app.App.wanted(app, key) for key, _, _ in addon_install.TICKED}
-    assert wanted == {"dungeons": True, "loot": True, "tooltips": False}  # (Dungeons was part of Gargoyle)
+    assert wanted == {"dungeons": True, "loot": True, "fishing": False, "tooltips": False}  # (Dungeons was part of Gargoyle)
     config.set("dungeons", False)
     config.set("tooltips", True)
     assert not gargoyle_app.App.wanted(app, "dungeons") and gargoyle_app.App.wanted(app, "tooltips")

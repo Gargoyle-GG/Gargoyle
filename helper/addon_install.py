@@ -6,7 +6,7 @@ and app's versions, file names, sizes and SHA-256. An addon download is checked 
 those before anything is unpacked, every file in it has to sit inside that addon's folder,
 and the old copy is only swapped out once the new one is fully unpacked next to it.
 Nothing but Interface\\AddOns\\Gargoyle, the optional addons ticked on the app's Addons tab
-(Interface\\AddOns\\Gargoyle_Dungeons, Gargoyle_Loot and Gargoyle_Tooltips), and (for Gargoyle's
+(Interface\\AddOns\\Gargoyle_Dungeons, Gargoyle_Loot, Gargoyle_Fishing and Gargoyle_Tooltips), and (for Gargoyle's
 helpers, once they've entered a helper code) Interface\\AddOns\\Gargoyle_Collector is touched. A new app is installed by its own installer
 (self_update.py).
 
@@ -29,14 +29,17 @@ from version import RELEASES
 NAME = "Gargoyle"  # (the core: the module addons below need it)
 DUNGEONS = "Gargoyle_Dungeons"  # (the dungeon journal, installed if wanted: ticked unless unticked)
 LOOT = "Gargoyle_Loot"  # (every item and where it comes from, likewise)
+FISHING = "Gargoyle_Fishing"  # (a key that casts Fishing: installed if ticked, unticked to start with)
 TOOLTIPS = "Gargoyle_Tooltips"  # (Gargoyle Damage Tooltips, its own addon, installed if wanted)
 COLLECTOR = "Gargoyle_Collector"  # (the Data Collector, for Gargoyle's helpers)
 # Each addon's key in versions.json: its folder.
-ADDONS = {"addon": NAME, "dungeons": DUNGEONS, "loot": LOOT, "tooltips": TOOLTIPS, "collector": COLLECTOR}
-OPTIONAL = {DUNGEONS, LOOT, TOOLTIPS, COLLECTOR}  # (the ones the app can take out again)
+ADDONS = {"addon": NAME, "dungeons": DUNGEONS, "loot": LOOT, "fishing": FISHING, "tooltips": TOOLTIPS,
+          "collector": COLLECTOR}
+OPTIONAL = {DUNGEONS, LOOT, FISHING, TOOLTIPS, COLLECTOR}  # (the ones the app can take out again)
 # The ones ticked on the app's Addons tab: key, its name in the app, and whether it's ticked
 # before anyone has ticked or unticked it. (Dungeons was part of Gargoyle until its 1.0.0.)
-TICKED = (("dungeons", "Dungeons", True), ("loot", "Loot", True), ("tooltips", "Damage tooltips", False))
+TICKED = (("dungeons", "Dungeons", True), ("loot", "Loot", True), ("fishing", "Fishing", False),
+          ("tooltips", "Damage tooltips", False))
 MAX_DOWNLOAD = 10 * 1024 * 1024
 MAX_UNPACKED = 20 * 1024 * 1024
 MAX_FILES = 500
@@ -272,7 +275,7 @@ def install(game_folder, data, signed, name=NAME):
 
 
 def uninstall(game_folder, name):
-    """Takes an optional addon (Dungeons, Loot, Damage tooltips, the Data Collector) out of the game again, when
+    """Takes an optional addon (Dungeons, Loot, Fishing, Damage tooltips, the Data Collector) out of the game again, when
     it's unticked in the app. Only that addon's own folder, and never a linked one. True if it
     was there."""
     if name not in OPTIONAL:

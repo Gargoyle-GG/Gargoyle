@@ -2,8 +2,9 @@
 -- be turned on and off (Options > AddOns > Gargoyle).
 --
 -- This is the core. Some features are addons of their own, which the Gargoyle app installs
--- when they're ticked in its Settings: Gargoyle_Dungeons (the dungeon journal) and
--- Gargoyle_Loot (every item and where it comes from). They use the core's helpers through the
+-- when they're ticked in its Settings: Gargoyle_Dungeons (the dungeon journal),
+-- Gargoyle_Loot (every item and where it comes from) and Gargoyle_Fishing (a key that casts
+-- Fishing). They use the core's helpers through the
 -- Gargoyle table below, and register their tabs in the window like the core's own modules.
 --
 -- Addons can't go online, so website data comes through the Gargoyle app on the
@@ -26,6 +27,7 @@ ns.API = 2
 ns.MODULE_ADDONS = {
   { key = "journal", title = "Dungeons", addon = "Gargoyle_Dungeons" },
   { key = "loot", title = "Loot", addon = "Gargoyle_Loot" },
+  { key = "fishing", title = "Fishing", addon = "Gargoyle_Fishing" },
 }
 
 local GOLD = "|cffd4a017"
@@ -117,8 +119,10 @@ local function loadDB()
   db.journal.chars = nil
   db.wishes = tableOr(db.wishes)
   -- (db.tooltipMarks: false when item tooltips don't get Gargoyle's upgrade and wishlist lines)
-  -- The module addons' own: db.journal (Gargoyle_Dungeons) and db.loot (Gargoyle_Loot).
+  -- The module addons' own: db.journal (Gargoyle_Dungeons), db.loot (Gargoyle_Loot) and
+  -- db.fishing (Gargoyle_Fishing).
   db.loot = tableOr(db.loot)
+  db.fishing = tableOr(db.fishing)
   -- (db.calendar: false when Gargoyle's raids are kept off the game's calendar)
   db.minimap = tableOr(db.minimap) -- the minimap button: angle (degrees), hide
   -- Raid alerts (Modules/RaidAlerts.lua): newRaids, reminders (false = off), and the raids
@@ -323,58 +327,109 @@ end
 
 -- ---- Options (Options > AddOns > Gargoyle) ----
 
+-- The page scrolls: the game's options window gives it a fixed space (the panel fills it, at
+-- whatever UI scale), and Gargoyle has more checkboxes than fit. Everything is on `page`, the
+-- scroll frame's child. ScrollFrameTemplate (Blizzard_SharedXML's SecureUIPanelTemplates.xml)
+-- adds the scroll bar on the right and mouse-wheel scrolling (ScrollUtil.InitScrollFrameWithScrollBar);
+-- UIPanelScrollFrameTemplate, the older one, does the same if a game hasn't the new one.
+local SCROLL_BAR = 30 -- (room on the right for the scroll bar)
+local LEFT, RIGHT = 16, 16 -- (the page's margins)
+
 function ns.CreateOptions()
   local panel = CreateFrame("Frame")
   panel.name = "Gargoyle"
-  local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  title:SetPoint("TOPLEFT", 16, -16)
+  local made, scroll = pcall(CreateFrame, "ScrollFrame", nil, panel, "ScrollFrameTemplate")
+  if not made then scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate") end
+  scroll:SetPoint("TOPLEFT", 0, -4)
+  scroll:SetPoint("BOTTOMRIGHT", -SCROLL_BAR, 4)
+  scroll:EnableMouseWheel(true)
+  local page = CreateFrame("Frame", nil, scroll)
+  page:SetSize(600, 600) -- (laid out once the panel has its size: layout below)
+  scroll:SetScrollChild(page)
+  ns.optionsScroll, ns.optionsPage = scroll, page
+
+  -- The page is laid out from the top, one row at a time: each row is a function that puts its
+  -- parts at y (from the top) for the page's width, and gives back how tall they came out. Texts
+  -- wrap to the width, so their height is only known then (it changes with the width).
+  local rows = {}
+  local function wrap(text, width)
+    text:SetJustifyH("LEFT")
+    text:SetWordWrap(true)
+    text:SetWidth(math.max(width, 40))
+    return text:GetStringHeight()
+  end
+  local function textRow(text, left, after)
+    rows[#rows + 1] = function(y, width)
+      text:ClearAllPoints()
+      text:SetPoint("TOPLEFT", page, "TOPLEFT", left, y)
+      return wrap(text, width - left - RIGHT) + after
+    end
+  end
+  -- A checkbox, its label to the right (wrapping), and a smaller line under the label if `about`;
+  -- `after`: more room below it.
+  local function boxRow(box, label, about, after)
+    label:SetPoint("TOPLEFT", box, "TOPRIGHT", 2, -9)
+    if about then about:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -3) end
+    rows[#rows + 1] = function(y, width)
+      box:ClearAllPoints()
+      box:SetPoint("TOPLEFT", page, "TOPLEFT", LEFT, y)
+      local textWidth = width - LEFT - box:GetWidth() - 2 - RIGHT
+      local height = 9 + wrap(label, textWidth)
+      if about then height = height + 3 + wrap(about, textWidth) end
+      return math.max(box:GetHeight(), height + 4) + (after or 0)
+    end
+  end
+  local function layout()
+    local width = scroll:GetWidth()
+    if not width or width < 100 then return end -- (not sized yet: it will be when it's shown)
+    page:SetWidth(width)
+    local y = -12
+    for _, row in ipairs(rows) do y = y - row(y, width) end
+    page:SetHeight(12 - y)
+  end
+
+  local title = page:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   title:SetText("Gargoyle")
-  local intro = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  intro:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+  textRow(title, LEFT, 8)
+  local intro = page:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   intro:SetText("Turn features on or off. Changes take effect straight away. Open the window with the "
     .. "Gargoyle button on the minimap, or by typing /gargoyle.")
+  textRow(intro, LEFT, 14)
   ns.optionBoxes = {}
-  local y = -70
   for _, key in ipairs(ns.moduleOrder) do
     local module = ns.modules[key]
-    local box = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-    box:SetPoint("TOPLEFT", 16, y)
-    local label = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    label:SetPoint("LEFT", box, "RIGHT", 4, 0)
+    local box = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+    local label = page:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     label:SetText(module.title)
-    local about = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    about:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+    local about = page:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     about:SetText(module.description or "")
+    boxRow(box, label, about, 8)
     box:SetChecked(ns.IsEnabled(key))
     box:SetScript("OnClick", function(self)
       ns.SetEnabled(key, self:GetChecked() and true or false)
     end)
     ns.optionBoxes[key] = box
-    y = y - 56
   end
   -- The module addons that aren't here: how to get them.
   for _, m in ipairs(ns.MODULE_ADDONS) do
     if not ns.modules[m.key] then
-      local missing = panel:CreateFontString(nil, "ARTWORK", "GameFontDisable")
-      missing:SetPoint("TOPLEFT", 20, y - 4)
+      local missing = page:CreateFontString(nil, "ARTWORK", "GameFontDisable")
       missing:SetText(m.title .. " isn't installed: tick it in the Gargoyle app's Settings (it's its own addon, "
         .. m.addon .. "), or turn it on in the AddOns list.")
-      y = y - 26
+      textRow(missing, LEFT + 4, 10)
     end
   end
-  -- More options, each a checkbox: get() says if it's on, set(on) changes it.
+  rows[#rows + 1] = function() return 10 end
+  -- More options, each a checkbox: get() says if it's on, set(on) changes it; `about`, a line under it.
   local more = {}
-  y = y - 10
-  local function option(label, get, set)
-    local box = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-    box:SetPoint("TOPLEFT", 16, y)
-    local text = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    text:SetPoint("LEFT", box, "RIGHT", 4, 0)
+  local function option(label, get, set, about)
+    local box = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+    local text = page:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     text:SetText(label)
+    boxRow(box, text, about)
     box:SetChecked(get())
     box:SetScript("OnClick", function(self) set(self:GetChecked() and true or false) end)
     more[box] = get
-    y = y - 32
     return box
   end
   ns.minimapBox = option("Show the minimap button", function() return not GargoyleDB.minimap.hide end, ns.ShowMinimapButton)
@@ -401,16 +456,19 @@ function ns.CreateOptions()
   -- helper code, so it's only shown when it's there. Its line says what's waiting to be sent.
   local collector = GargoyleCollector
   if collector then
-    ns.collectorBox = option("Collect item, spell and talent data for Gargoyle (I'm a helper)", collector.On, collector.SetOn)
-    ns.collectorText = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    ns.collectorText:SetPoint("TOPLEFT", ns.collectorBox, "BOTTOMLEFT", 30, 2)
+    ns.collectorText = page:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     ns.collectorText:SetText(collector.Summary())
+    ns.collectorBox = option("Collect item, spell and talent data for Gargoyle (I'm a helper)", collector.On,
+      collector.SetOn, ns.collectorText)
   end
+  scroll:HookScript("OnSizeChanged", layout)
   panel:SetScript("OnShow", function()
     for key, box in pairs(ns.optionBoxes) do box:SetChecked(ns.IsEnabled(key)) end
     for box, get in pairs(more) do box:SetChecked(get()) end
     if collector then ns.collectorText:SetText(collector.Summary()) end
+    layout()
   end)
+  layout()
   ns.optionsPanel = panel
   -- The options window's API has changed over the years; if this one is missing, the
   -- features are still there, just without the checkboxes.

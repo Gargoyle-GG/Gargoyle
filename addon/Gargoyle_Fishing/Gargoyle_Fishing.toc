@@ -1,0 +1,9 @@
+## Interface: 16001
+## Title: Gargoyle Fishing
+## Notes: Easy fishing for WoW Forever: cast Fishing with one key (set it in Key Bindings > Gargoyle), and press it again to reel in (or right-click the bobber, as always). One key, and a louder splash (sound effects up, music and ambient sounds down while you fish, so you can hear the bite), can be turned off in Gargoyle's options. Needs the Gargoyle addon. Turn it on or off in Options > AddOns > Gargoyle.
+## Author: Gargoyle
+## Version: 1.0.0
+## Dependencies: Gargoyle
+## IconTexture: Interface\AddOns\Gargoyle_Fishing\Media\Badge
+
+Fishing.lua
