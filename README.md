@@ -52,7 +52,7 @@ what you can read here.
 - It writes your guild's raids into a small data addon (`Interface\AddOns\Gargoyle_Sync`), which
   the game loads the next time you log in or `/reload`.
 - It installs and updates the Gargoyle addon (`Interface\AddOns\Gargoyle`), and the addons you
-  tick in its Settings (Dungeons and Loot, ticked to start with, and Damage tooltips:
+  tick in its Addons tab (Dungeons and Loot, ticked to start with, and Damage tooltips:
   `Interface\AddOns\Gargoyle_Dungeons`, `Gargoyle_Loot` and `Gargoyle_Tooltips`), from these
   releases, but only if every file matches a manifest signed with Gargoyle's release key, which
   is kept offline and never on GitHub (see [SECURITY.md](SECURITY.md)). Unticking one removes
@@ -66,12 +66,13 @@ what you can read here.
   quietly, but only if it's the installer signed with that same release key. The installer
   closes the app, updates it and opens it again, keeping your settings.
 - It looks for updates when it starts and every 6 hours (unless that's switched off in
-  Settings). **Check for updates** on the Game card looks straight away, and a bar there shows
-  how far along an addon update is.
+  the Addons tab). **Check for updates** on the Game card and on the Addons tab looks straight
+  away, **Update all** on the Addons tab updates every addon that's out of date, and a bar
+  shows how far along an addon update is.
 - It never touches the running game, its memory, or any other game files, and it never plays
   for you. The addon only shows things and records your own clicks.
 - It talks to `gargoyle.gg` (your raids and signups) and to GitHub (updates), nothing else.
-  The update checks can be switched off in its Settings. Your account link is a token stored
+  The update checks can be switched off in its Addons tab. Your account link is a token stored
   encrypted with Windows' own per-user protection.
 - It runs in the tray when you close its window, and only starts with Windows if you turn
   that on.

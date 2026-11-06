@@ -143,19 +143,31 @@ def ago(epoch):
 
 
 class ScrollList(tk.Frame):
-    """A list of rows that scrolls with the mouse wheel."""
+    """Rows (or a whole page) that scroll, with the mouse wheel or the scrollbar. `gap`: room
+    between what's shown and the scrollbar."""
 
-    def __init__(self, parent):
+    def __init__(self, parent, gap=0):
         super().__init__(parent, bg=PANEL)
         self.canvas = tk.Canvas(self, bg=PANEL, highlightthickness=0, bd=0)
         self.bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview, style="Gargoyle.Vertical.TScrollbar")
         self.inner = tk.Frame(self.canvas, bg=PANEL)
         self.window = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
         self.canvas.configure(yscrollcommand=self.bar.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.pack(side="left", fill="both", expand=True, padx=(0, gap))
         self.bar.pack(side="right", fill="y")
+        self.wrapping = []  # (labels whose text wraps to the width shown, and how much less)
         self.inner.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self.window, width=e.width))
+        self.canvas.bind("<Configure>", self._resized)
+
+    def _resized(self, event):
+        self.canvas.itemconfigure(self.window, width=event.width)
+        for widget, less in self.wrapping:
+            widget.configure(wraplength=max(px(160), event.width - less))
+
+    def wraps(self, widget, less=0):
+        """A label whose text wraps to the width shown (less `less`, for what's beside it)."""
+        self.wrapping.append((widget, less))
+        return widget
 
     def wheel(self, event):
         if self.inner.winfo_height() > self.canvas.winfo_height():
@@ -164,7 +176,29 @@ class ScrollList(tk.Frame):
     def clear(self):
         for child in self.inner.winfo_children():
             child.destroy()
+        self.wrapping = []
         self.canvas.yview_moveto(0)
+
+
+class Bar(tk.Canvas):
+    """How far along something is (0 to 1): a thin gold bar."""
+
+    def __init__(self, parent):
+        super().__init__(parent, height=px(6), bg=PANEL, highlightthickness=0, bd=0)
+        self.fraction = None
+        self.bind("<Configure>", lambda e: self.draw())
+
+    def show(self, fraction):
+        self.fraction = fraction
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        width, height = self.winfo_width(), self.winfo_height()
+        self.create_rectangle(0, 0, width - 1, height - 1, fill=INSET, outline=BORDER_STRONG)
+        if self.fraction:
+            self.create_rectangle(1, 1, max(2, round((width - 2) * min(1.0, self.fraction))), height - 2,
+                                  fill=GOLD, outline="", tags="done")
 
 
 class Card(tk.Frame):
@@ -183,22 +217,13 @@ class Card(tk.Frame):
         self.sub = label(self, font=SMALL, fg=DIM)
         self.sub.pack(fill="x")
         self.action = None
-        self.bar = tk.Canvas(self, height=px(6), bg=PANEL, highlightthickness=0, bd=0)
-        self.bar.bind("<Configure>", lambda e: self._draw_bar())
+        self.bar = Bar(self)
         self.fraction = None
         self.bind("<Configure>", lambda e: self._wrap(e.width))
 
     def _wrap(self, width):
         for part in (self.value, self.sub):
             part.configure(wraplength=max(80, width - px(26) - 10))  # (less the padding and the labels' own edges)
-
-    def _draw_bar(self):
-        self.bar.delete("all")
-        width, height = self.bar.winfo_width(), self.bar.winfo_height()
-        self.bar.create_rectangle(0, 0, width - 1, height - 1, fill=INSET, outline=BORDER_STRONG)
-        if self.fraction:
-            self.bar.create_rectangle(1, 1, max(2, round((width - 2) * min(1.0, self.fraction))), height - 2,
-                                      fill=GOLD, outline="", tags="done")
 
     def show(self, state, value, sub="", action=None, primary=False, progress=None):
         """`progress`: how far along something is (0 to 1), shown as a bar in place of the button."""
@@ -210,7 +235,7 @@ class Card(tk.Frame):
             self.fraction = progress
             if not self.bar.winfo_manager():
                 self.bar.pack(fill="x", pady=(px(8), px(2)))
-            self._draw_bar()
+            self.bar.show(progress)
         elif self.bar.winfo_manager():
             self.bar.pack_forget()
             self.fraction = None
@@ -244,6 +269,7 @@ class App:
         self.install_wanted = False  # (Install clicked while a version check was already running)
         self.progress = None  # (how far along, what's under way) while the addons are checked or updated
         self.checked_by_hand = 0  # when Check for updates last found the addons up to date
+        self.last_checked = 0  # when GitHub last said what the latest release has (by itself or on a click)
         self.app_offer = None  # a newer app's installer, signed: "Update now"
         self.updating = None  # what "Update now" is doing ("Downloading…"), or why it stopped
         self.update_busy = False
@@ -340,7 +366,7 @@ class App:
         self.body = tk.Frame(outer, bg=PANEL, highlightthickness=1, highlightbackground=BORDER)
         self.body.pack(fill="both", expand=True)
         self.tabs, self.pages = {}, {}
-        for name in ("Raids", "Characters", "Activity", "Settings"):
+        for name in ("Raids", "Characters", "Addons", "Activity", "Settings"):
             tab = tk.Frame(tabs, bg=BG, cursor="hand2")
             tab.pack(side="left", padx=(0, px(4)))
             text = tk.Label(tab, text=name, font=BOLD, bg=BG, fg=DIM, padx=px(14), pady=px(6), cursor="hand2")
@@ -373,10 +399,76 @@ class App:
                                font=SMALL, padx=px(10), pady=px(8), highlightthickness=0, insertbackground=TEXT)
         self.log_box.pack(fill="both", expand=True)
 
-        # Settings
-        page = self.pages["Settings"]
-        self.startup_on = tk.BooleanVar(value=startup.enabled())
+        # Addons: tick the ones wanted (the app installs them and keeps them up to date), and how
+        # each one is. One Check for updates asks about them all (it's one question to GitHub).
+        page = self.pages["Addons"]
         self.auto_update = tk.BooleanVar(value=self.config.get("auto_update", True) is not False)
+        self.addons_top = top = tk.Frame(page, bg=PANEL)
+        top.pack(fill="x")
+        self.check_button = button(top, "Check for updates", self.check_now)
+        self.check_button.pack(side="right", anchor="n", padx=(px(8), 0))
+        self.update_all_button = button(top, "Update all", self.install_addon, primary=True)  # (when there's something to install)
+        self.addons_heading = heading = tk.Frame(top, bg=PANEL)
+        heading.pack(side="left", fill="x", expand=True)
+        label(heading, "Addons", font=HEAD, fg=GOLD).pack(anchor="w")
+        self.addons_text = label(heading, fg=DIM)
+        self.addons_text.pack(anchor="w", fill="x")
+        heading.bind("<Configure>", lambda e: self.addons_text.configure(wraplength=max(px(160), e.width - 4)))
+        self.addons_bar = Bar(page)  # (while the addons are checked or updated)
+        self.addon_list = ScrollList(page, gap=px(10))
+        self.addon_list.pack(fill="both", expand=True, pady=(px(8), 0))
+        rows, wraps = self.addon_list.inner, self.addon_list.wraps
+        wraps(label(rows, "Tick the ones you want: the app installs them and keeps them up to date. Untick one to "
+                          "take it out of the game.", fg=DIM)).pack(anchor="w", fill="x", pady=(0, px(4)))
+        about = {
+            "addon": "Your raids, characters and talent plans. The others need it, so it's always installed.",
+            "dungeons": "Every dungeon and raid's bosses, loot, abilities and quests, and a map of where they are.",
+            "loot": "Every item in the game and where it comes from, with search, your upgrades and a wishlist you "
+                    "share with the website.",
+            "tooltips": "A breakdown of your spells' damage and healing on their tooltips.",
+            "collector": "For Gargoyle's helpers: notes the items, spells and talents your game shows you. It's "
+                         "installed while your account is a helper.",
+        }
+        self.optional_on, self.addon_rows = {}, {}
+        self.always_on = tk.BooleanVar(value=True)  # (Gargoyle itself, and a helper's Data Collector: no untick)
+        for key in ("addon",) + tuple(k for k, _, _ in addon_install.TICKED) + ("collector",):
+            row = tk.Frame(rows, bg=PANEL)
+            row.pack(fill="x")
+            tk.Frame(row, bg=BORDER, height=1).pack(fill="x")
+            body = tk.Frame(row, bg=PANEL, pady=px(8))
+            body.pack(fill="x")
+            status = tk.Frame(body, bg=PANEL)
+            status.pack(side="right", anchor="n", padx=(px(10), 0))
+            what = label(status, font=BOLD)
+            what.pack(anchor="e")
+            detail = label(status, font=SMALL, fg=DIM)
+            detail.pack(anchor="e")
+            left = tk.Frame(body, bg=PANEL)
+            left.pack(side="left", fill="x", expand=True)
+            if key in ("addon", "collector"):
+                box = checkbox(left, ADDON_NAMES[key], self.always_on, None)
+                box.configure(state="disabled", disabledforeground=TEXT)
+            else:
+                self.optional_on[key] = tk.BooleanVar(value=self.wanted(key))
+                box = checkbox(left, ADDON_NAMES[key], self.optional_on[key], lambda key=key: self.set_optional(key))
+            box.configure(font=BOLD)
+            box.pack(anchor="w")
+            wraps(label(left, about[key], font=SMALL, fg=DIM), less=px(270)).pack(anchor="w", padx=(px(24), 0))
+            self.addon_rows[key] = (row, what, detail)
+        self.addons_end = tk.Frame(rows, bg=BORDER, height=1)
+        self.addons_end.pack(fill="x")
+        checkbox(rows, "Update the addons by themselves when a new version is out", self.auto_update,
+                 self.set_auto_update).pack(anchor="w", pady=(px(10), 0))
+        wraps(label(rows, "Each one can also be turned on or off in game, in Gargoyle's options. After an update, "
+                          "restart the game to load it.", font=SMALL, fg=DIM)).pack(anchor="w", fill="x", pady=(px(4), 0))
+
+        # Settings (it scrolls: there's more than a small window shows)
+        page = self.pages["Settings"]
+        label(page, f"Gargoyle app {APP_VERSION}", font=SMALL, fg=DIM).pack(side="bottom", anchor="w", pady=(px(8), 0))
+        self.settings = ScrollList(page, gap=px(10))
+        self.settings.pack(fill="both", expand=True)
+        page, wraps = self.settings.inner, self.settings.wraps
+        self.startup_on = tk.BooleanVar(value=startup.enabled())
         self.update_checks = tk.BooleanVar(value=self.config.get("update_checks", True) is not False)
         self.to_tray = tk.BooleanVar(value=self.config.get("close_to_tray", True) is not False)
         label(page, "Gargoyle", font=HEAD, fg=GOLD).pack(anchor="w")
@@ -388,29 +480,12 @@ class App:
         self.tray_box.pack(anchor="w", pady=(px(4), 0))
         checkbox(page, "Check GitHub for new versions of the app and addons (every few hours)", self.update_checks,
                  self.set_update_checks).pack(anchor="w", pady=(px(4), 0))
-        checkbox(page, "Keep the Gargoyle addon up to date", self.auto_update,
-                 self.set_auto_update).pack(anchor="w", pady=(px(4), 0))
-        # The optional addons: each its own addon, installed when ticked (addon_install.TICKED).
-        label(page, "Gargoyle addons", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
-        label(page, "Gargoyle itself has your raids, characters and talent plans. These add more to it:", fg=DIM,
-              wraplength=px(740)).pack(anchor="w", fill="x", pady=(px(4), 0))
-        about = {
-            "dungeons": "Dungeons: every dungeon and raid's bosses, loot, abilities and quests, and a map of where they are",
-            "loot": "Loot: every item in the game and where it comes from, with search, your upgrades and a wishlist "
-                    "you share with the website",
-            "tooltips": "Damage tooltips: a breakdown of your spells' damage and healing on their tooltips",
-        }
-        self.optional_on = {}
-        for key, _, _ in addon_install.TICKED:
-            self.optional_on[key] = tk.BooleanVar(value=self.wanted(key))
-            checkbox(page, about[key], self.optional_on[key],
-                     lambda key=key: self.set_optional(key)).pack(anchor="w", pady=(px(4), 0))
-        label(page, "Each one can also be turned on or off in game, in Gargoyle's options.", fg=DIM,
-              wraplength=px(740)).pack(anchor="w", fill="x", pady=(px(4), 0))
+        wraps(label(page, "Which addons to install, and keeping them up to date, is on the Addons tab.",
+                    fg=DIM)).pack(anchor="w", fill="x", pady=(px(4), 0))
 
         # The Data Collector, for Gargoyle's helpers: a helper code unlocks it (collected.py).
         label(page, "Data collector (for helpers)", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
-        self.collector_text = label(page, fg=DIM, wraplength=px(740))
+        self.collector_text = wraps(label(page, fg=DIM))
         self.collector_text.pack(anchor="w", fill="x", pady=(px(4), 0))
         row = tk.Frame(page, bg=PANEL)
         row.pack(fill="x", pady=(px(4), 0))
@@ -427,7 +502,7 @@ class App:
         row = tk.Frame(page, bg=PANEL)
         row.pack(fill="x", pady=(px(4), 0))
         button(row, "Choose…", self.choose_folder).pack(side="right", padx=(px(10), 0))
-        self.folder_text = label(row, fg=DIM, wraplength=px(620))
+        self.folder_text = wraps(label(row, fg=DIM), less=px(110))
         self.folder_text.pack(side="left", fill="x", expand=True)
 
         label(page, "Account", font=HEAD, fg=GOLD).pack(anchor="w", pady=(px(16), 0))
@@ -437,8 +512,6 @@ class App:
         self.account_button.pack(side="right", padx=(px(10), 0))
         self.account_text = label(row, fg=DIM)
         self.account_text.pack(side="left", fill="x", expand=True)
-
-        label(page, f"Gargoyle app {APP_VERSION}", font=SMALL, fg=DIM).pack(side="bottom", anchor="w")
 
         self.show_tab("Raids")
 
@@ -549,6 +622,7 @@ class App:
                 note = ""
             game.show("ok", f"Addon {installed}", f"{note}Game folder: {folder.name}{with_tips}", check)
         self.folder_text.configure(text=str(folder) if folder else "Not found yet")
+        self.show_addons(folder, helper)
 
         # The Data Collector (Settings)
         for widget in self.collector_widgets:
@@ -629,6 +703,56 @@ class App:
 
         if self.tray:
             self.tray.title = "Gargoyle" + (f": synced {ago(last['at'])}" if last and config.token else "")
+
+    def show_addons(self, folder, helper):
+        """The Addons page: how each addon is, and Update all when there's something to install."""
+        ready = behind = 0  # (wanted addons with a newer version out, and how many of them are installed)
+        for key, (row, what, detail) in self.addon_rows.items():
+            if key == "collector" and not helper:  # (for helpers only)
+                row.pack_forget()
+                continue
+            if not row.winfo_manager():
+                row.pack(fill="x", before=self.addons_end)
+            name = addon_install.ADDONS[key]
+            have = addon_install.installed_version(folder, name) if folder else None
+            linked = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / name)
+            out = addon_install.offer(self.versions, key)
+            wanted = key in ("addon", "collector") or self.wanted(key)
+            state, text, more = overview.addon_state(have, out["version"] if out else None, wanted, linked)
+            what.configure(text=text, fg=STATE_COLORS[state])
+            detail.configure(text=more)
+            if folder and wanted and not linked and out and addon_install.newer(out["version"], have):
+                ready += 1
+                behind += have is not None
+        working = self.progress is not None
+        if not folder:
+            note = "The game wasn't found: choose its folder in Settings, and the addons go in there."
+        elif working:
+            note = self.progress[1]
+        elif self.install_problem:
+            note = self.install_problem
+        elif behind:
+            note = f"{behind} update{'s' if behind != 1 else ''} available."
+        elif ready:
+            note = f"{ready} addon{'s' if ready != 1 else ''} to install."
+        elif self.last_checked:
+            note = f"All up to date. Checked for updates {ago(self.last_checked)}."
+        else:
+            note = "Not checked for updates yet."
+        self.addons_text.configure(text=note, fg=AMBER if self.install_problem and not working else DIM)
+        if working:
+            if not self.addons_bar.winfo_manager():
+                self.addons_bar.pack(fill="x", pady=(px(8), 0), after=self.addons_top)
+            self.addons_bar.show(self.progress[0])
+        elif self.addons_bar.winfo_manager():
+            self.addons_bar.pack_forget()
+        if ready and not working:
+            self.update_all_button.configure(text="Update all" if behind else "Install")
+            if not self.update_all_button.winfo_manager():
+                self.update_all_button.pack(side="right", anchor="n", padx=(px(8), 0), before=self.addons_heading)
+        else:
+            self.update_all_button.pack_forget()
+        self.check_button.configure(state="disabled" if working else "normal")
 
     def show_raids(self, raids):
         rows = self.raid_list
@@ -998,6 +1122,7 @@ class App:
         self.next_version_check = time.time() + VERSION_RETRY_SECONDS  # (unless it gets through)
         try:
             self.versions = self.syncer.versions()
+            self.last_checked = time.time()
             self.next_version_check = time.time() + VERSION_CHECK_SECONDS
             self._check_app()
             folder = self.syncer.game_folder
@@ -1005,7 +1130,7 @@ class App:
                 return
             todo = [self._addon_update(folder, "addon", install)]
             if todo[0] or addon_install.installed_version(folder) is not None:  # (the others once Gargoyle's there)
-                # The optional addons when ticked in Settings, and the Data Collector for helpers.
+                # The optional addons when ticked on the Addons tab, and the Data Collector for helpers.
                 todo += [self._addon_update(folder, key, install) for key, _, _ in addon_install.TICKED if self.wanted(key)]
                 if self.config.get("helper") is True:
                     todo.append(self._addon_update(folder, "collector", install))

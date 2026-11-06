@@ -906,6 +906,19 @@ def test_the_characters_the_window_shows():
     assert overview.characters(picked, "junk")[0]["state"] == "waiting"
 
 
+def test_how_each_addon_is_on_the_addons_tab():
+    state = overview.addon_state
+    assert state("1.0.0", "1.1.0") == ("waiting", "Update available", "1.1.0 (you have 1.0.0)")
+    assert state("1.1.0", "1.1.0") == ("ok", "Up to date", "Version 1.1.0")
+    assert state("1.2.0", "1.1.0")[1] == "Up to date"  # (newer than the release's, e.g. a test copy)
+    assert state("1.0.0", None) == ("ok", "Installed", "Version 1.0.0")  # (not checked yet)
+    assert state(None, "1.1.0") == ("waiting", "Not installed yet", "Version 1.1.0 is ready")
+    assert state(None, None) == ("waiting", "Not installed yet", "")
+    assert state(None, "1.1.0", wanted=False) == ("off", "Not installed", "")
+    assert state("1.0.0", "1.1.0", wanted=False)[:2] == ("off", "Not ticked")
+    assert state("1.0.0", "1.1.0", linked=True) == ("ok", "Version 1.0.0", "A linked folder: the app leaves it alone")
+
+
 def test_the_window_shows_the_last_sync_when_the_app_starts(tmp_path, game_folder):
     config = Config(tmp_path / "config.json")
     config.data["game_folder"] = str(game_folder)
@@ -956,20 +969,37 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         assert "2 minutes ago" in shown and "Nothing waiting" in shown
         assert "Molten Core" in shown and "Not signed up" in shown and "Tomorrow" in shown
         assert not app.start_hidden and app.banner.winfo_manager() == ""
-        # The Game card: Check for updates, and a bar while the addons are checked or updated.
+        # The Addons tab: a tick for each optional addon, and how each one is.
+        installed = addon_install.installed_version(game_folder)
+        rows = {key: (what.cget("text"), detail.cget("text"), row.winfo_manager())
+                for key, (row, what, detail) in app.addon_rows.items()}
+        assert rows["addon"] == ("Installed", f"Version {installed}", "pack")  # (not checked yet)
+        assert rows["dungeons"][0] == rows["loot"][0] == "Not installed yet"  # (ticked until unticked)
+        assert rows["tooltips"][0] == "Not installed" and rows["collector"][2] == ""  # (helpers only)
+        assert set(app.optional_on) == {"dungeons", "loot", "tooltips"} and app.optional_on["loot"].get()
+        assert app.addons_text.cget("text") == "Not checked for updates yet." and app.update_all_button.winfo_manager() == ""
+        # Settings scrolls (there's more than a small window shows).
+        assert isinstance(app.settings, gargoyle_app.ScrollList) and app.tray_box.master is app.settings.inner
+        # The Game card: Check for updates, and a bar while the addons are checked or updated
+        # (on the Addons tab too).
         game = app.cards["game"]
         assert "Check for updates" in shown and game.bar.winfo_manager() == ""
         app.events.put(("progress", 0.5, "Updating the Loot addon… (2 of 3)"))
         app.pump()
         shown = texts(root)
-        assert "Updating the Loot addon… (2 of 3)" in shown and "Check for updates" not in shown
+        assert "Updating the Loot addon… (2 of 3)" in shown and game.action is None
         assert game.bar.winfo_manager() == "pack" and game.fraction == 0.5
+        assert app.addons_bar.winfo_manager() == "pack" and app.addons_bar.fraction == 0.5
+        assert app.addons_text.cget("text") == "Updating the Loot addon… (2 of 3)"
+        assert str(app.check_button.cget("state")) == "disabled"
         app.events.put(("progress", None, None))
-        app.checked_by_hand = time.time()  # (Check for updates found nothing new)
+        app.checked_by_hand = app.last_checked = time.time()  # (Check for updates found nothing new)
         app.pump()
         shown = texts(root)
-        assert game.bar.winfo_manager() == "" and "Check for updates" in shown
+        assert game.bar.winfo_manager() == "" and game.action.cget("text") == "Check for updates"
         assert any(t.startswith("Up to date: checked just now.") for t in shown)
+        assert app.addons_bar.winfo_manager() == "" and str(app.check_button.cget("state")) == "normal"
+        assert app.addons_text.cget("text") == "All up to date. Checked for updates just now."
         # The raid links to its signup on the website.
         opened = []
         monkeypatch.setattr(gargoyle_app.webbrowser, "open", opened.append)
@@ -998,6 +1028,10 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         app.refresh()
         shown = texts(root)
         assert "Update" in shown and app.banner.winfo_manager() == "pack" and any("A new version of the Gargoyle app is out (99.0)" in t for t in shown)
+        row, what, detail = app.addon_rows["addon"]
+        assert (what.cget("text"), detail.cget("text")) == ("Update available", f"99.0 (you have {installed})")
+        assert app.addons_text.cget("text") == "1 update available."
+        assert app.update_all_button.winfo_manager() == "pack" and app.update_all_button.cget("text") == "Update all"
         # Its installer not signed (yet), or run from the source code: the download. Signed, in
         # the installed app: Update now.
         assert app.download_button.winfo_manager() == "pack" and app.update_button.winfo_manager() == ""
@@ -1015,6 +1049,8 @@ def test_the_window(tmp_path, game_folder, monkeypatch):
         app.refresh()
         assert app.unlock_button.winfo_manager() == "" and app.send_button.winfo_manager() == "pack"
         assert any("Waiting to send: 12 items, 3 spells and a talent tree." in t for t in texts(root))
+        row, what, _ = app.addon_rows["collector"]  # (a helper's: on the Addons tab, installed with the next check)
+        assert row.winfo_manager() == "pack" and what.cget("text") == "Not installed yet"
         # No longer a helper: the collector comes out of the game.
         collector_folder = game_folder / "Interface" / "AddOns" / "Gargoyle_Collector"
         collector_folder.mkdir()

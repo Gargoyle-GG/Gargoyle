@@ -6,8 +6,11 @@ picked in game. Plain data in, plain data out (tested in tests/test_helper.py).
   read back from Gargoyle_Sync\\Data.lua when the app starts).
 - `actions` and `picked` are the signups and characters in the game's saved files
   (Syncer.read_saved); `sent` and `uploaded` are what the website said about them (config).
+- addon_state says how each addon is, for the Addons tab.
 """
-STATUS = {"accepted": "Coming", "tentative": "Tentative", "declined": "Can't come"}
+from addon_install import newer
+
+STATUS ={"accepted": "Coming", "tentative": "Tentative", "declined": "Can't come"}
 ROLE = {"tank": "Tank", "healer": "Healer", "dps": "Damage"}
 CLASS = {"deathknight": "Death Knight", "death_knight": "Death Knight", "demonhunter": "Demon Hunter"}
 RAID_LASTS = 4 * 3600  # a raid that started this long ago is no longer shown
@@ -125,3 +128,21 @@ def characters(picked, uploaded):
         found.append({"key": c["key"], "name": c["name"], "class": class_name(c.get("class")), "token": (c.get("class") or "").lower(),
                       "level": c.get("level"), "read": c["at"], "state": state, "text": text})
     return sorted(found, key=lambda c: c["name"].lower())
+
+
+def addon_state(have, latest, wanted=True, linked=False):
+    """How one addon is, for the Addons tab: (state "ok", "waiting" or "off", what, detail).
+    `have`: the version installed (None: not installed). `latest`: the latest release's (None:
+    not checked yet, or not in it). `wanted`: ticked (or always there: Gargoyle itself, and a
+    helper's Data Collector). `linked`: its folder is a link, which the app leaves alone."""
+    if linked:
+        return "ok", f"Version {have}" if have else "A linked folder", "A linked folder: the app leaves it alone"
+    if not have:
+        if not wanted:
+            return "off", "Not installed", ""
+        return "waiting", "Not installed yet", f"Version {latest} is ready" if latest else ""
+    if not wanted:
+        return "off", "Not ticked", f"Version {have} is still in the game folder"
+    if latest and newer(latest, have):
+        return "waiting", "Update available", f"{latest} (you have {have})"
+    return "ok", "Up to date" if latest else "Installed", f"Version {have}"

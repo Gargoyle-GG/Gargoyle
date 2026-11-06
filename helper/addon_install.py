@@ -5,7 +5,7 @@ Each release has a versions.json saying what's in it: the release's tag, and the
 and app's versions, file names, sizes and SHA-256. An addon download is checked against
 those before anything is unpacked, every file in it has to sit inside that addon's folder,
 and the old copy is only swapped out once the new one is fully unpacked next to it.
-Nothing but Interface\\AddOns\\Gargoyle, the optional addons ticked in the app's Settings
+Nothing but Interface\\AddOns\\Gargoyle, the optional addons ticked on the app's Addons tab
 (Interface\\AddOns\\Gargoyle_Dungeons, Gargoyle_Loot and Gargoyle_Tooltips), and (for Gargoyle's
 helpers, once they've entered a helper code) Interface\\AddOns\\Gargoyle_Collector is touched. A new app is installed by its own installer
 (self_update.py).
@@ -34,7 +34,7 @@ COLLECTOR = "Gargoyle_Collector"  # (the Data Collector, for Gargoyle's helpers)
 # Each addon's key in versions.json: its folder.
 ADDONS = {"addon": NAME, "dungeons": DUNGEONS, "loot": LOOT, "tooltips": TOOLTIPS, "collector": COLLECTOR}
 OPTIONAL = {DUNGEONS, LOOT, TOOLTIPS, COLLECTOR}  # (the ones the app can take out again)
-# The ones ticked in the app's Settings: key, its name in the app, and whether it's ticked
+# The ones ticked on the app's Addons tab: key, its name in the app, and whether it's ticked
 # before anyone has ticked or unticked it. (Dungeons was part of Gargoyle until its 1.0.0.)
 TICKED = (("dungeons", "Dungeons", True), ("loot", "Loot", True), ("tooltips", "Damage tooltips", False))
 MAX_DOWNLOAD = 10 * 1024 * 1024
@@ -300,7 +300,7 @@ CHOICES = "choices.ini"  # (in the app's folder, written by the installer: helpe
 def installer_choice(app_folder):
     """The installer's "Also install Damage tooltips" tick (True or False), or None if the
     installer didn't leave one. Taken once: the file goes after it's read, so a later change
-    in the app's Settings sticks (until the next install asks again)."""
+    on the app's Addons tab sticks (until the next install asks again)."""
     path = Path(app_folder) / CHOICES
     try:
         raw = path.read_bytes()[:8192]
