@@ -123,6 +123,8 @@ local function loadDB()
   -- db.fishing (Gargoyle_Fishing).
   db.loot = tableOr(db.loot)
   db.fishing = tableOr(db.fishing)
+  -- Camera.lua: side and up (what was picked), before (the game's own values, for reset).
+  db.camera = tableOr(db.camera)
   -- (db.calendar: false when Gargoyle's raids are kept off the game's calendar)
   db.minimap = tableOr(db.minimap) -- the minimap button: angle (degrees), hide
   -- Raid alerts (Modules/RaidAlerts.lua): newRaids, reminders (false = off), and the raids
@@ -461,10 +463,75 @@ function ns.CreateOptions()
     ns.collectorBox = option("Collect item, spell and talent data for Gargoyle (I'm a helper)", collector.On,
       collector.SetOn, ns.collectorText)
   end
+
+  -- Camera (Camera.lua): sliders for the sideways and up settings, and a Reset button. The sliders
+  -- are Blizzard's own (MinimalSliderWithSteppersTemplate, as in the game's settings: Init(value,
+  -- min, max, steps, formatters), and the OnValueChanged callback); a game without it gets the
+  -- commands in a line of text instead.
+  local camera = ns.Camera
+  local cameraTitle = page:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  cameraTitle:SetText("Camera")
+  rows[#rows + 1] = function() return 8 end
+  textRow(cameraTitle, LEFT, 6)
+  local cameraAbout = page:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  cameraAbout:SetText("Move the camera sideways, or frame your character lower on the screen. These are the game's own "
+    .. "camera settings, set again at every login and never in combat. The game has no setting for the camera's tilt: "
+    .. "tilt it with the mouse. Gargoyle turns off the game's 'keep character centred' (Accessibility > Motion Sickness) "
+    .. "while an offset is set, because it would hold the camera in the middle. Commands: /gargoyle camera side <number>, up <strength 0 to 1>, reset.")
+  textRow(cameraAbout, LEFT, 8)
+  local sliders, refreshing = {}, false
+  local function cameraSlider(label, min, max, steps, name, get, set)
+    local made, slider = pcall(CreateFrame, "Frame", nil, page, "MinimalSliderWithSteppersTemplate")
+    if not (made and slider and slider.Init and slider.RegisterCallback) then return end
+    local title = page:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    title:SetText(label)
+    textRow(title, LEFT, 2)
+    local mixin = MinimalSliderWithSteppersMixin
+    local right = mixin and mixin.Label and mixin.Label.Right or 2
+    slider:Init(get(), min, max, steps, { [right] = function(value) return tostring(math.floor(value * 100 + 0.5) / 100) end })
+    slider:RegisterCallback(mixin and mixin.Event and mixin.Event.OnValueChanged or "OnValueChanged", function(_, value)
+      if not refreshing then set(value, true) end
+    end, slider)
+    rows[#rows + 1] = function(y)
+      slider:ClearAllPoints()
+      slider:SetPoint("TOPLEFT", page, "TOPLEFT", LEFT + 4, y)
+      return slider:GetHeight() + 4
+    end
+    sliders[#sliders + 1] = { slider = slider, get = get, name = name }
+    if not camera.Has(name) then slider:SetEnabled(false) end
+    return slider
+  end
+  local sideSlider = cameraSlider("Sideways (left to right)", camera.SLIDER_MIN, camera.SLIDER_MAX, 80,
+    "test_cameraOverShoulder", camera.SideValue, camera.SetSide)
+  local upSlider = cameraSlider("Higher view, strength: your character lower on the screen (0 is off)", camera.UP_MIN, camera.UP_MAX, 20,
+    "test_cameraDynamicPitch", camera.UpValue, camera.SetUp)
+  local cameraReset = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+  cameraReset:SetSize(140, 24)
+  cameraReset:SetText("Reset camera")
+  local function showCamera()
+    refreshing = true
+    for _, s in ipairs(sliders) do
+      s.slider:SetValue(s.get())
+      s.slider:SetEnabled(camera.Has(s.name))
+    end
+    refreshing = false
+  end
+  cameraReset:SetScript("OnClick", function()
+    camera.Reset()
+    showCamera()
+  end)
+  rows[#rows + 1] = function(y)
+    cameraReset:ClearAllPoints()
+    cameraReset:SetPoint("TOPLEFT", page, "TOPLEFT", LEFT + 4, y)
+    return cameraReset:GetHeight() + 14
+  end
+  ns.cameraSliders, ns.cameraReset = { side = sideSlider, up = upSlider }, cameraReset
+
   scroll:HookScript("OnSizeChanged", layout)
   panel:SetScript("OnShow", function()
     for key, box in pairs(ns.optionBoxes) do box:SetChecked(ns.IsEnabled(key)) end
     for box, get in pairs(more) do box:SetChecked(get()) end
+    showCamera()
     if collector then ns.collectorText:SetText(collector.Summary()) end
     layout()
   end)
@@ -533,8 +600,11 @@ SlashCmdList.GARGOYLE = function(message)
     ns.Debug()
   elseif command == "minimap" then
     ns.ShowMinimapButton(GargoyleDB.minimap.hide == true)
+  elseif command == "camera" or command:sub(1, 7) == "camera " then
+    ns.Camera.Command(command:match("^camera%s*(.*)$"))
   elseif command == "help" then
-    ns.say("/gargoyle opens the window. /gargoyle options turns features on or off. /gargoyle minimap shows or hides the minimap button.")
+    ns.say("/gargoyle opens the window. /gargoyle options turns features on or off. /gargoyle minimap shows or hides the minimap button. "
+      .. "/gargoyle camera moves the camera sideways or up (side, up, reset).")
   else
     ns.ToggleWindow()
   end

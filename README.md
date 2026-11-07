@@ -11,6 +11,9 @@ site for WoW Forever. Free, like everything on Gargoyle.
   You still pick every talent yourself. Item tooltips anywhere in the game say when an item is
   an upgrade for your character (the website's gear planner works those out) and when it's on
   your wishlist.
+- The core also has **camera settings**: `/gargoyle camera side <number>` moves the camera
+  sideways and `up <number>` frames your character lower (the game's own hidden camera settings,
+  set again at login and never in combat; sliders in Gargoyle's options), and `reset` puts them back.
 - **Dungeons** (`addon/Gargoyle_Dungeons`), a module addon (it needs the core), is a dungeon
   journal: every dungeon and raid's bosses, loot and abilities, and quests with the chains
   that lead to them (its data is `Data/Journal.lua`; item and spell names and text come from

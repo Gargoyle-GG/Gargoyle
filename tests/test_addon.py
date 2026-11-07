@@ -67,8 +67,36 @@ function methods:SetVerticalScroll(offset) self.offset = offset end
 -- The game's scroll frame templates: a scroll bar on the right, and the mouse wheel scrolls
 -- (as ScrollUtil.InitScrollFrameWithScrollBar does for ScrollFrameTemplate).
 local SCROLL_TEMPLATES = { ScrollFrameTemplate = true, UIPanelScrollFrameTemplate = true }
+-- Blizzard's slider with steppers (MinimalSlider.xml / .lua in Blizzard_SharedXML): Init(value, min,
+-- max, steps, formatters) -- a formatter for the right label shows the value -- SetValue (which
+-- calls the OnValueChanged callback only when the value changes, within min and max), SetEnabled.
+-- fake.noSliders: a game without the template (CreateFrame fails, as for any unknown template).
+fake.sliders = {}
+local function sliderTemplate(w)
+  if fake.noSliders then error("unknown template MinimalSliderWithSteppersTemplate") end
+  w.width, w.height = 250, 40
+  w.Slider = fake.new("Slider", nil, w)
+  w.callbacks = {}
+  table.insert(fake.sliders, w)
+  function w:Init(value, min, max, steps, formatters)
+    self.min, self.max, self.steps, self.formatters = min, max, steps, formatters
+    self.value = math.max(min, math.min(max, value))
+    self.shownValue = formatters and formatters[2] and formatters[2](self.value)
+  end
+  function w:RegisterCallback(event, fn, owner) self.callbacks[event] = { fn, owner } end
+  function w:SetValue(value)
+    value = math.max(self.min, math.min(self.max, value))
+    if value == self.value then return end
+    self.value = value
+    self.shownValue = self.formatters and self.formatters[2] and self.formatters[2](value)
+    local callback = self.callbacks.OnValueChanged
+    if callback then callback[1](callback[2], value) end
+  end
+  function w:SetEnabled(on) self.enabled = on end
+end
 local function fromTemplate(w, template)
   if template == "UICheckButtonTemplate" then w.width, w.height = 32, 32 end -- (CheckButtonTemplates.xml)
+  if template == "MinimalSliderWithSteppersTemplate" then sliderTemplate(w) end
   if not (template and SCROLL_TEMPLATES[template]) then return end
   w.ScrollBar = fake.new("EventFrame", nil, w)
   w.ScrollBar:SetPoint("TOPLEFT", w, "TOPRIGHT", 6, 2)
@@ -197,6 +225,21 @@ CreateFrame = function(kind, name, parent, template)
   local w = fake.new(kind, name, parent)
   fromTemplate(w, template)
   return w
+end
+MinimalSliderWithSteppersMixin = { Label = { Left = 1, Right = 2, Top = 3, Min = 4, Max = 5 }, Event = { OnValueChanged = "OnValueChanged" } }
+-- Game settings (CVars): fake.cvars (text), as WoW Forever's engine has the camera's hidden ones;
+-- a setting that isn't there answers nil to GetCVar, and SetCVar of it is an error. fake.cvarSets
+-- lists every SetCVar, and fake.combat refuses none: Gargoyle must not call it then.
+fake.cvars = { test_cameraOverShoulder = "0", test_cameraDynamicPitch = "0", test_cameraDynamicPitchBaseFovPad = "0.35",
+               test_cameraDynamicPitchBaseFovPadFlying = "0.75", test_cameraDynamicPitchSmartPivotCutoffDist = "10",
+               CameraKeepCharacterCentered = "1", CameraReduceUnexpectedMovement = "1" }
+fake.cvarSets = {}
+GetCVar = function(name) return fake.cvars[name] end
+SetCVar = function(name, value)
+  if fake.cvars[name] == nil then error("no such setting " .. name) end
+  if fake.combat and (name:find("^test_camera") or name:find("^Camera")) then error("Gargoyle must not set the camera in combat") end
+  table.insert(fake.cvarSets, name .. "=" .. value)
+  fake.cvars[name] = tostring(value)
 end
 UIParent = fake.new("Frame")
 Minimap = fake.new("Minimap")
@@ -2467,3 +2510,277 @@ def test_launch_safety_unknown_items_old_cores_and_a_broken_module():
     assert "Dungeons didn't start" in crash.printed() and crash.ns.optionsPanel is not None
     crash.slash()
     assert crash.fake.button("Raid signups") is not None
+
+
+# ---- Camera (addon/Gargoyle/Camera.lua): the game's hidden camera settings, set by /gargoyle camera ----
+
+SIDE, PITCH, FOV, FOV_FLYING = ("test_cameraOverShoulder", "test_cameraDynamicPitch",
+                                "test_cameraDynamicPitchBaseFovPad", "test_cameraDynamicPitchBaseFovPadFlying")
+CAMERA_START = {SIDE: "0", PITCH: "0", FOV: "0.35", FOV_FLYING: "0.75"}
+
+
+def camera_game(**kw):
+    return Game(sync_lua(API, {}), **kw)
+
+
+def cvars(game):
+    return {name: game.fake.cvars[name] for name in CAMERA_START}
+
+
+def test_camera_side_is_set_and_read_back():
+    game = camera_game()
+    game.slash("camera side 1.5")
+    assert game.fake.cvars[SIDE] == "1.5" and game.db.camera.side == 1.5
+    assert f"set {SIDE} to 1.5: the game kept 1.5" in game.printed()
+    game.slash("camera side -2")
+    assert game.fake.cvars[SIDE] == "-2" and game.db.camera.side == -2
+    # Far out is cut to what a command accepts (-5 to 5), and the game may keep less: it says what it kept.
+    game.slash("camera side 99")
+    assert game.fake.cvars[SIDE] == "5" and game.db.camera.side == 5
+    capped = camera_game(before=f'local set = SetCVar; SetCVar = function(n, v) '
+                                f'if n == "{SIDE}" and tonumber(v) > 1 then v = "1" end set(n, v) end')
+    capped.slash("camera side 3")
+    assert f"set {SIDE} to 3: the game kept 1" in capped.printed()
+    # Not a number: the help, nothing changed.
+    before = list(game.fake.cvarSets.values())
+    game.slash("camera side lots")
+    game.slash("camera side")
+    assert "/gargoyle camera side <-2 to 2>" in game.printed() and list(game.fake.cvarSets.values()) == before
+
+
+def test_camera_up_is_a_strength_and_the_padding_runs_the_other_way():
+    game = camera_game()
+    game.slash("camera up 0.5")
+    # Strength 0.5: padding 0.85 - 0.80 x 0.5 = 0.45 (both ordinary and flying), dynamic pitch on.
+    assert game.fake.cvars[PITCH] == "1" and game.fake.cvars[FOV] == "0.45" and game.fake.cvars[FOV_FLYING] == "0.45"
+    assert f"set {FOV} to 0.45: the game kept 0.45" in game.printed() and game.db.camera.up == 0.5
+    assert "higher view: strength 0.5 (padding 0.45)" in game.printed()
+    # Full strength: the most lift, padding 0.05. A small strength: a slight lift, padding near 0.85.
+    game.slash("camera up 1")
+    assert game.fake.cvars[FOV] == "0.05" and game.fake.cvars[FOV_FLYING] == "0.05" and game.db.camera.up == 1
+    game.slash("camera up 0.05")
+    assert game.fake.cvars[PITCH] == "1" and game.fake.cvars[FOV] == "0.81"
+    game.slash("camera up 0.01")
+    assert game.fake.cvars[FOV] == "0.84"
+    # 0 is off, and puts the padding back as the game had it.
+    game.slash("camera up 0")
+    assert game.fake.cvars[PITCH] == "0" and game.db.camera.up == 0
+    assert game.fake.cvars[FOV] == "0.35" and game.fake.cvars[FOV_FLYING] == "0.75"
+    game.slash("camera up 7")  # (0 to 1)
+    assert game.fake.cvars[FOV] == "0.05" and game.db.camera.up == 1
+
+
+def test_camera_old_up_values_become_a_strength_once():
+    # Saved before the change: "up" was the padding itself (0.45 was strength 0.5; 0.85 and more did nothing).
+    def login(up, mode=""):
+        saved = "GargoyleDB = {camera = {up = %s%s, before = {}}}" % (up, mode)
+        start = "; ".join(f'fake.cvars.{name} = "{value}"' for name, value in CAMERA_START.items())
+        return camera_game(saved=saved, before=start)
+    old = login(0.45)
+    assert old.db.camera.up == 0.5 and old.fake.cvars[FOV] == "0.45" and old.db.camera.upMode == 2
+    assert login(0.05).db.camera.up == 1
+    gone = login(0.9)
+    assert gone.db.camera.up == 0 and gone.fake.cvars[PITCH] == "0"
+    assert login(0).db.camera.up == 0
+    # Already a strength (upMode 2): not converted again.
+    new = login(0.45, ", upMode = 2")
+    assert new.db.camera.up == 0.45 and new.fake.cvars[FOV] == "0.49"
+    # Reloading after the conversion keeps it.
+    again = camera_game(saved="GargoyleDB = " + lua_table(old, old.db))
+    assert again.db.camera.up == 0.5
+
+
+def test_camera_pitch_says_the_game_has_no_tilt_setting():
+    game = camera_game()
+    game.slash("camera pitch")
+    game.slash("camera pitch 20")
+    assert game.printed().count("the game has no setting for the camera's tilt (pitch): tilt it with the mouse") == 2
+    assert cvars(game) == CAMERA_START and len(game.fake.cvarSets) == 0 and game.db.camera.side is None
+
+
+def test_camera_setting_the_game_doesnt_have():
+    game = camera_game(before=f"fake.cvars.{SIDE} = nil")
+    game.slash("camera side 1")
+    assert f"{SIDE}: this game doesn't have that setting" in game.printed()
+    assert len(game.fake.cvarSets) == 0 and game.db.camera.side is None  # (nothing kept to apply later)
+    game.slash("camera")
+    assert f"{SIDE} is not in this game" in game.printed() and f"{PITCH} is 0" in game.printed()
+    no_pitch = camera_game(before=f"fake.cvars.{PITCH} = nil")
+    no_pitch.slash("camera up 0.5")
+    assert f"{PITCH}: this game doesn't have that setting" in no_pitch.printed() and no_pitch.db.camera.up is None
+    # Only the padding missing: the rest is set and it says so.
+    part = camera_game(before=f"fake.cvars.{FOV_FLYING} = nil")
+    part.slash("camera up 0.5")
+    assert part.fake.cvars[PITCH] == "1" and part.fake.cvars[FOV] == "0.45"
+    assert f"{FOV_FLYING}: this game doesn't have that setting" in part.printed()
+
+
+def test_camera_with_no_arguments_shows_each_setting():
+    game = camera_game()
+    game.slash("camera")
+    out = game.printed()
+    assert f"{SIDE} is 0" in out and f"{FOV} is 0.35" in out and f"{FOV_FLYING} is 0.75" in out
+    assert "test_cameraDynamicPitchSmartPivotCutoffDist is 10" in out and "Gargoyle isn't setting your camera" in out
+    game.slash("camera side 1")
+    game.slash("camera")
+    assert "Gargoyle sets side to 1 and up (strength) to (not picked) at login" in game.printed()
+    game.slash("help")
+    assert "/gargoyle camera" in game.printed()
+    game.slash("camera nonsense")
+    assert "up <strength 0 to 1> frames your character lower" in game.printed()
+
+
+def test_camera_picks_are_saved_and_set_again_at_login():
+    game = camera_game()
+    game.slash("camera side 1.5")
+    game.slash("camera up 0.5")
+    saved = "GargoyleDB = " + lua_table(game, game.db)
+    # The next login: the client forgot the "test_" settings. Set again, quietly, and the originals kept.
+    start = "; ".join(f'fake.cvars.{name} = "{value}"' for name, value in CAMERA_START.items())
+    again = camera_game(saved=saved, before=start)
+    assert again.fake.cvars[SIDE] == "1.5" and again.fake.cvars[PITCH] == "1" and again.fake.cvars[FOV] == "0.45"
+    assert "set test_camera" not in again.printed()
+    # And again after a loading screen, when something put them back; not set when they already are.
+    again.fake.cvars[SIDE] = "0"
+    again.fake.fire("PLAYER_ENTERING_WORLD")
+    assert again.fake.cvars[SIDE] == "1.5"
+    changes = len(again.fake.cvarSets)
+    again.fake.fire("PLAYER_ENTERING_WORLD")
+    assert len(again.fake.cvarSets) == changes
+    # Reset still knows the game's own values from before the first change.
+    again.slash("camera reset")
+    assert cvars(again) == CAMERA_START
+
+
+CENTERED, REDUCE = "CameraKeepCharacterCentered", "CameraReduceUnexpectedMovement"
+
+
+def test_camera_offsets_turn_off_keep_centered_and_reset_restores_it():
+    game = camera_game()
+    game.slash("camera side 1.5")
+    assert game.fake.cvars[CENTERED] == "0" and game.fake.cvars[REDUCE] == "0"  # (reduce blocks sideways too)
+    game.slash("camera up 0.5")
+    assert game.fake.cvars[CENTERED] == "0" and game.fake.cvars[REDUCE] == "0"
+    game.slash("camera up 0")  # (side still set: both stay off)
+    assert game.fake.cvars[CENTERED] == "0" and game.fake.cvars[REDUCE] == "0"
+    game.slash("camera up 0.5")
+    game.slash("camera reset")
+    assert game.fake.cvars[CENTERED] == "1" and game.fake.cvars[REDUCE] == "1" and cvars(game) == CAMERA_START
+    assert len(list(game.db.camera.before.keys())) == 0
+
+
+def test_camera_both_offsets_at_zero_restore_keep_centered():
+    game = camera_game()
+    game.slash("camera side 1")
+    game.slash("camera up 0.4")
+    assert game.fake.cvars[CENTERED] == "0" and game.fake.cvars[REDUCE] == "0"
+    game.slash("camera side 0")
+    assert game.fake.cvars[CENTERED] == "0"  # (up still set)
+    game.slash("camera up 0")
+    assert game.fake.cvars[CENTERED] == "1" and game.fake.cvars[REDUCE] == "1"
+    # Zero from the start forces nothing.
+    zero = camera_game()
+    zero.slash("camera side 0")
+    assert zero.fake.cvars[CENTERED] == "1"
+    # Set again at login, and listed.
+    game.slash("camera side 1")
+    again = camera_game(saved="GargoyleDB = " + lua_table(game, game.db))
+    assert again.fake.cvars[CENTERED] == "0"
+    again.slash("camera")
+    assert f"{CENTERED} is 0" in again.printed() and f"{REDUCE} is 0" in again.printed()
+    # A game without these settings: the offsets still work.
+    bare = camera_game(before=f"fake.cvars.{CENTERED} = nil; fake.cvars.{REDUCE} = nil")
+    bare.slash("camera side 1")
+    bare.slash("camera up 0.5")
+    assert bare.fake.cvars[SIDE] == "1" and bare.fake.cvars[PITCH] == "1"
+
+
+def test_camera_waits_for_combat_to_end():
+    game = camera_game()
+    game.fake.combat = True
+    game.slash("camera side 1")
+    game.slash("camera up 0.5")
+    assert cvars(game) == CAMERA_START and len(game.fake.cvarSets) == 0  # (not touched in combat)
+    assert game.db.camera.side == 1 and game.db.camera.up == 0.5 and "in combat" in game.printed()
+    game.fake.fire("PLAYER_ENTERING_WORLD")  # (a loading screen in combat)
+    assert cvars(game) == CAMERA_START
+    game.fake.combat = False
+    game.fake.fire("PLAYER_REGEN_ENABLED")
+    assert game.fake.cvars[SIDE] == "1" and game.fake.cvars[PITCH] == "1" and game.fake.cvars[FOV] == "0.45"
+    assert game.fake.cvars["CameraKeepCharacterCentered"] == "0"
+    assert "camera settings applied" in game.printed()
+    # A login in combat (a reload during a fight) waits too.
+    saved = "GargoyleDB = " + lua_table(game, game.db)
+    start = "; ".join(f'fake.cvars.{name} = "{value}"' for name, value in CAMERA_START.items())
+    relog = camera_game(saved=saved, before=start + "; fake.combat = true")
+    assert cvars(relog) == CAMERA_START
+    relog.fake.combat = False
+    relog.fake.fire("PLAYER_REGEN_ENABLED")
+    assert relog.fake.cvars[SIDE] == "1"
+    # Nothing waiting: leaving combat sets nothing and says nothing.
+    quiet = camera_game()
+    quiet.fake.fire("PLAYER_REGEN_ENABLED")
+    assert len(quiet.fake.cvarSets) == 0 and "camera" not in quiet.printed()
+
+
+def test_camera_reset_puts_back_the_originals_and_stops_applying():
+    game = camera_game(before=f'fake.cvars.{SIDE} = "0.4"')
+    game.slash("camera side 1")
+    game.slash("camera side 2")  # (the original is the one from before the first change)
+    game.slash("camera up 0.5")
+    game.slash("camera reset")
+    assert cvars(game) == {**CAMERA_START, SIDE: "0.4"}
+    assert game.db.camera.side is None and game.db.camera.up is None and len(list(game.db.camera.before.keys())) == 0
+    assert f"{SIDE} is 0.4 again" in game.printed()
+    # Not applied again: neither at a loading screen nor at the next login.
+    game.fake.fire("PLAYER_ENTERING_WORLD")
+    assert game.fake.cvars[SIDE] == "0.4"
+    again = camera_game(saved="GargoyleDB = " + lua_table(game, game.db), before=f'fake.cvars.{SIDE} = "0.4"')
+    assert again.fake.cvars[SIDE] == "0.4" and len(again.fake.cvarSets) == 0
+    # Nothing to reset.
+    again.slash("camera reset")
+    assert "nothing to reset" in again.printed()
+
+
+def test_camera_reset_in_combat_waits_and_stays_reset_after_a_reload():
+    game = camera_game()
+    game.slash("camera side 1")
+    game.fake.combat = True
+    game.slash("camera reset")
+    assert game.fake.cvars[SIDE] == "1" and game.db.camera.side is None
+    # A reload in combat: still reset when it ends, not set again.
+    saved = "GargoyleDB = " + lua_table(game, game.db)
+    relog = camera_game(saved=saved, before=f'fake.cvars.{SIDE} = "1"; fake.combat = true')
+    assert relog.fake.cvars[SIDE] == "1"
+    relog.fake.combat = False
+    relog.fake.fire("PLAYER_REGEN_ENABLED")
+    assert relog.fake.cvars[SIDE] == "0"
+    game.fake.combat = False
+    game.fake.fire("PLAYER_REGEN_ENABLED")
+    assert game.fake.cvars[SIDE] == "0"
+
+
+def test_camera_sliders_in_the_options_page():
+    game = camera_game()
+    side, up = game.ns.cameraSliders.side, game.ns.cameraSliders.up
+    assert side.min == -2 and side.max == 2 and up.min == 0 and up.max == 1 and side.enabled is not False
+    assert side.value == 0 and up.value == 0 and side.shownValue == "0"
+    # Moving a slider sets the game's setting and keeps it, without chatting while it's dragged.
+    side.SetValue(side, 1.2)
+    up.SetValue(up, 0.4)
+    assert game.fake.cvars[SIDE] == "1.2" and game.fake.cvars[FOV] == "0.53" and game.db.camera.side == 1.2  # (strength 0.4: padding 0.85 - 0.32)
+    assert side.shownValue == "1.2" and "set test_camera" not in game.printed()
+    # Reset camera puts it back and moves the sliders; showing the page shows what is set now.
+    game.click("Reset camera")
+    assert cvars(game) == CAMERA_START and side.value == 0 and up.value == 0 and game.db.camera.side is None
+    game.slash("camera side -1.5")
+    game.ns.optionsPanel.scripts.OnShow(game.ns.optionsPanel)
+    assert side.value == -1.5 and game.fake.cvars[SIDE] == "-1.5"  # (the page showing a value doesn't set it again)
+    # A setting this game doesn't have: its slider is off.
+    missing = camera_game(before=f"fake.cvars.{SIDE} = nil")
+    assert missing.ns.cameraSliders.side.enabled is False and missing.ns.cameraSliders.up.enabled is not False
+    # A game without the slider template: the commands are in a line of text instead.
+    plain = camera_game(before="fake.noSliders = true")
+    assert plain.ns.cameraSliders.side is None and plain.ns.cameraSliders.up is None
+    assert any("Commands: /gargoyle camera side <number>" in w.text for w in plain.fake.widgets.values()
+               if w.kind == "FontString")

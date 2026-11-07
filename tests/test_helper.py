@@ -505,6 +505,32 @@ def test_a_linked_addon_folder_is_left_alone(tmp_path):
     assert (source / "Gargoyle.toc").read_text() == "## Version: 0.1.0\n" and len(list(source.iterdir())) == 1
 
 
+def test_a_click_leaves_a_linked_addon_folder_alone(tmp_path):
+    """Update all / Install / Update never replace a developer's linked folder, and say so."""
+    pytest.importorskip("tkinter")
+    import queue
+    import types
+    import gargoyle_app
+    _winapi = pytest.importorskip("_winapi")
+    source = tmp_path / "repo" / "Gargoyle"
+    source.mkdir(parents=True)
+    (source / "Gargoyle.toc").write_text("## Version: 0.1.0\n")
+    game = tmp_path / "_classic_"
+    link = game / "Interface" / "AddOns" / "Gargoyle"
+    link.parent.mkdir(parents=True)
+    _winapi.CreateJunction(str(source), str(link))
+    app = types.SimpleNamespace(events=queue.Queue(), config=Config(tmp_path / "config.json"),
+                                versions=release(addon_version="9.0.0"))
+    app._addon_update = gargoyle_app.App._addon_update.__get__(app)
+    for install in (False, True):
+        assert app._addon_update(game, "addon", install) is None
+    logs = []
+    while not app.events.empty():
+        logs.append(app.events.get())
+    assert logs == [("log", "The Gargoyle addon folder is a link (a developer's copy), so the app leaves it alone.")]
+    assert addon_install.is_linked(link) and (source / "Gargoyle.toc").read_text() == "## Version: 0.1.0\n"
+
+
 def test_a_broken_link_or_an_update_cut_short_is_put_right(tmp_path):
     """A link to a folder that's gone: "not installed", and in the way of installing, until
     Install removes the link (only the link). An update cut short between moving the old copy

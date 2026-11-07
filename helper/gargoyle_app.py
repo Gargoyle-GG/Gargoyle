@@ -1218,10 +1218,15 @@ class App:
             return None
         linked = addon_install.is_linked(addon_install.addons(folder) / offer["name"])
         auto_off = self.config.get("auto_update", True) is False
-        # Without a click: never a linked copy, Gargoyle's first install waits for one, and
-        # updates wait when they're switched off. (Ticked optional addons, and a helper's Data
-        # Collector, go in straight away.)
-        if not install and (linked or (current is None and key == "addon") or (current is not None and auto_off)):
+        # A linked copy (a developer's) is never installed over, click or not.
+        if linked:
+            if install:
+                put(("log", f"The {ADDON_NAMES[key]} addon folder is a link (a developer's copy), so the app leaves it alone."))
+            return None
+        # Without a click: Gargoyle's first install waits for one, and updates wait when
+        # they're switched off. (Ticked optional addons, and a helper's Data Collector, go in
+        # straight away.)
+        if not install and ((current is None and key == "addon") or (current is not None and auto_off)):
             return None
         return {**offer, "current": current}
 
