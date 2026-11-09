@@ -130,11 +130,15 @@ def characters(picked, uploaded):
     return sorted(found, key=lambda c: c["name"].lower())
 
 
-def addon_state(have, latest, wanted=True, linked=False):
+def addon_state(have, latest, wanted=True, linked=False, hidden=False):
     """How one addon is, for the Addons tab: (state "ok", "waiting" or "off", what, detail).
     `have`: the version installed (None: not installed). `latest`: the latest release's (None:
     not checked yet, or not in it). `wanted`: ticked (or always there: Gargoyle itself, and a
-    helper's Data Collector). `linked`: its folder is a link, which the app leaves alone."""
+    helper's Data Collector). `linked`: its folder is a link, which the app leaves alone.
+    `hidden`: a link Windows won't let the app look through right now."""
+    if linked and hidden and not have:
+        return ("ok", "A linked folder",
+                "The app can't look inside it right now (restart the app to see its version)")
     if linked:
         return "ok", f"Version {have}" if have else "A linked folder", "A linked folder: the app leaves it alone"
     if not have:

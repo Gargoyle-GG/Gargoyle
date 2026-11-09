@@ -26,11 +26,86 @@ local function data()
   return ns.data and ns.data[class]
 end
 
--- The game's numbers can be "secret" (hidden from addons) in some situations; then there's
--- nothing to work with, and nothing is shown.
+-- The game's numbers can be "secret" (hidden from addons): WoW Forever hides your own stats
+-- while you're actively in combat. plain() gives a number you can work with, or nil for a
+-- hidden one. Nothing here ever does sums or comparisons on a hidden value.
 local function plain(v)
   if issecretvalue and issecretvalue(v) then return nil end
   return type(v) == "number" and v or nil
+end
+
+-- ---- Your stats, remembered ----
+-- While the game hides a stat, the last readable value of it is used instead (kept in memory
+-- only). Every stat is read through stat(): a readable value is remembered, a hidden one is
+-- never kept; it gives the remembered value (and notes that, so the tooltip can say so), or,
+-- if nothing was ever remembered (say after a /reload in combat), flags the stat as missing
+-- so that spell's tooltip adds nothing rather than wrong numbers.
+
+local remembered = {}                    -- key -> the values last read
+local usedMemory, missing = false, false -- for the spell being worked out
+
+local function stat(key, ...)
+  local n, values, isHidden = select("#", ...), { ... }, false
+  for i = 1, n do
+    if issecretvalue and issecretvalue(values[i]) then
+      isHidden = true
+    elseif type(values[i]) ~= "number" then
+      values[i] = 0
+    end
+  end
+  if not isHidden then
+    remembered[key] = values
+    return unpack(values, 1, n)
+  end
+  local old = remembered[key]
+  if old then
+    usedMemory = true
+    return unpack(old, 1, n)
+  end
+  missing = true
+  for i = 1, n do values[i] = 0 end
+  return unpack(values, 1, n)
+end
+
+local function bonusDamage(index) return (stat("damage" .. index, (GetSpellBonusDamage(index)))) end
+local function bonusHealing() return (stat("healing", (GetSpellBonusHealing()))) end
+local function spellCrit(index) return (stat("spellCrit" .. index, (GetSpellCritChance(index)))) end
+local function meleeCrit() return (stat("crit", (GetCritChance()))) end
+local function rangedCrit() return (stat("rangedCrit", (GetRangedCritChance()))) end
+
+local function attackPower(ranged)
+  local base, plus, minus
+  if ranged then base, plus, minus = UnitRangedAttackPower("player") else base, plus, minus = UnitAttackPower("player") end
+  base, plus, minus = stat(ranged and "rangedPower" or "power", base, plus, minus)
+  return math.max(0, base + plus + minus)
+end
+
+-- A weapon's lowest and highest hit.
+local function weaponDamage(ranged)
+  local low, high
+  if ranged then
+    local _
+    _, low, high = UnitRangedDamage("player")
+  else
+    low, high = UnitDamage("player")
+  end
+  return stat(ranged and "rangedWeapon" or "weapon", low, high)
+end
+
+-- Reads every stat now, so there's something to fall back on when the game starts hiding
+-- them (a problem with one read doesn't stop the others).
+local function refresh()
+  for index = 1, 7 do
+    if index > 1 then pcall(bonusDamage, index) end
+    pcall(spellCrit, index)
+  end
+  pcall(bonusHealing)
+  pcall(meleeCrit)
+  pcall(rangedCrit)
+  for _, ranged in ipairs({ false, true }) do
+    pcall(attackPower, ranged)
+    pcall(weaponDamage, ranged)
+  end
 end
 
 -- ---- Your talents (points spent, by talent spell and by name) ----
@@ -121,16 +196,10 @@ local function spellDamage(school)
   local best = 0
   for name, index in pairs(SCHOOLS) do
     if index > 1 and school and school:find(name, 1, true) then
-      best = math.max(best, plain(GetSpellBonusDamage(index)) or 0)
+      best = math.max(best, bonusDamage(index))
     end
   end
   return best
-end
-
-local function attackPower(ranged)
-  local base, plus, minus
-  if ranged then base, plus, minus = UnitRangedAttackPower("player") else base, plus, minus = UnitAttackPower("player") end
-  return math.max(0, (plain(base) or 0) + (plain(plus) or 0) + (plain(minus) or 0))
 end
 
 local function schoolSpells(scope)
@@ -146,14 +215,7 @@ local function workOut(part, rows)
   local heal = part.kind == "heal" or (part.kind == "absorb" and HEALERS[select(2, UnitClass("player"))])
   local min, max
   if part.kind == "weapon" then
-    local low, high
-    if part.ranged then
-      local _
-      _, low, high = UnitRangedDamage("player")
-    else
-      low, high = UnitDamage("player")
-    end
-    low, high = plain(low), plain(high)
+    local low, high = weaponDamage(part.ranged)
     if not low or not high or high <= 0 then return end
     min, max = low * part.pct / 100, high * part.pct / 100
     rows[#rows + 1] = { (part.ranged and "Ranged weapon" or "Weapon") .. " damage" .. (part.pct ~= 100 and (" × " .. part.pct .. "%") or ""), { min, max } }
@@ -173,7 +235,7 @@ local function workOut(part, rows)
       min, max = min + added, max + added
     end
     if part.coeff then
-      local bonus = heal and (plain(GetSpellBonusHealing()) or 0) or spellDamage(part.school)
+      local bonus = heal and bonusHealing() or spellDamage(part.school)
       local added = bonus * part.coeff
       rows[#rows + 1] = { (heal and "Bonus healing " or "Spell damage ") .. ns.num(bonus) .. " × " .. ns.num(part.coeff * 100, 2) .. "%", "+" .. ns.num(added) }
       min, max = min + added, max + added
@@ -198,11 +260,11 @@ local function workOut(part, rows)
   if part.crit then
     local chance, critBonus
     if physical then
-      chance = plain(part.ranged and GetRangedCritChance() or GetCritChance()) or 0
+      chance = part.ranged and rangedCrit() or meleeCrit()
       chance = chance + talentBonus("crit", part.scopes, false)
       critBonus = 1
     else
-      chance = plain(GetSpellCritChance(SCHOOLS[part.school] or 2)) or 0
+      chance = spellCrit(SCHOOLS[part.school] or 2)
       chance = chance + talentBonus("spell_crit", part.scopes, false, schoolSpells)
       critBonus = heal and 0.5 or 0.5 * (1 + talentBonus("crit_damage", part.scopes, true) / 100)
     end
@@ -259,9 +321,11 @@ function T.Lines(spellID)
   local spell = known and known.spells[spellID]
   if not spell then return end
   local lines, perCast, healing, damage, periodic = {}, 0, false, false, false
+  usedMemory, missing = false, false
   for _, part in ipairs(spell.parts) do
     local rows = {}
     local avg = workOut(part, rows)
+    if missing then return end -- (a hidden stat never seen: no numbers is better than wrong ones)
     if avg then
       lines[#lines + 1] = { title(part, spell), nil, "title" }
       for _, row in ipairs(rows) do lines[#lines + 1] = row end
@@ -281,6 +345,9 @@ function T.Lines(spellID)
   local mana = manaCost(spellID)
   if mana and mana > 0 then
     lines[#lines + 1] = { "Per mana (" .. ns.num(mana) .. " mana)", ns.num(perCast / mana, 2) }
+  end
+  if usedMemory then
+    lines[#lines + 1] = { "In combat the game hides your stats: these use the ones from before the fight.", nil, "note" }
   end
   return lines
 end
@@ -321,6 +388,8 @@ local function addTo(tooltip, spellID)
     if type(right) == "table" then right = rangeText(right) end
     if style == "title" then
       tooltip:AddLine(left, GOLD[1], GOLD[2], GOLD[3])
+    elseif style == "note" then
+      tooltip:AddLine(left, GREY[1], GREY[2], GREY[3], true)
     elseif style == "sub" then
       tooltip:AddLine("  " .. left, GREY[1], GREY[2], GREY[3], true)
     else
@@ -342,9 +411,46 @@ elseif GameTooltip and GameTooltip.HookScript then
   end)
 end
 
--- Talents are read again after they change (some of these events are only in some clients).
+-- Talents are read again after they change, and your stats are read whenever the game lets
+-- us (so there's something to use while it hides them). Some of these events are only in some
+-- clients.
+local TALENT_EVENTS = { "TRAIT_CONFIG_UPDATED", "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "SPELLS_CHANGED" }
+local STAT_EVENTS = { "UNIT_STATS", "PLAYER_DAMAGE_DONE_MODS", "COMBAT_RATING_UPDATE", "UNIT_ATTACK_POWER",
+  "UNIT_RANGED_ATTACK_POWER", "UNIT_INVENTORY_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "SPELL_POWER_CHANGED", "UNIT_AURA" }
+local isTalentEvent, isStatEvent = {}, {}
 local events = CreateFrame("Frame")
-for _, event in ipairs({ "TRAIT_CONFIG_UPDATED", "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "SPELLS_CHANGED" }) do
+for _, event in ipairs(TALENT_EVENTS) do
+  isTalentEvent[event] = true
   pcall(events.RegisterEvent, events, event)
 end
-events:SetScript("OnEvent", function() talentRanks = nil end)
+for _, event in ipairs(STAT_EVENTS) do
+  isStatEvent[event] = true
+  pcall(events.RegisterEvent, events, event)
+end
+for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED" }) do
+  pcall(events.RegisterEvent, events, event)
+end
+
+-- A burst of changes (buffs, gear) is one read, a moment later.
+local readSoon
+local function soon()
+  if not (C_Timer and C_Timer.After) then return refresh() end
+  if readSoon then return end
+  readSoon = true
+  C_Timer.After(0.3, function()
+    readSoon = false
+    refresh()
+  end)
+end
+
+events:SetScript("OnEvent", function(_, event, unit)
+  if isTalentEvent[event] then
+    talentRanks = nil
+  elseif isStatEvent[event] then
+    -- (only yours: other units' changes don't matter)
+    if type(unit) == "string" and (issecretvalue and issecretvalue(unit) or unit ~= "player") then return end
+    soon()
+  else -- (logging in or a loading screen, and the end of a fight)
+    refresh()
+  end
+end)

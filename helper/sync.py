@@ -401,7 +401,7 @@ class Syncer:
             raise Unlinked()
         if not self.game_folder:
             raise ValueError("choose the game folder first")
-        if addon_install.installed_version(self.game_folder) is None:
+        if not wow_paths.has_addon(self.game_folder):
             raise ValueError("install the Gargoyle addon first")
         actions, characters, stamps = self.read_saved()
         stored = self.config.get("sent")

@@ -3,9 +3,11 @@
 -- Gargoyle table. The game has no journal of its own for them. Pick a place on the left
 -- (inside a dungeon the tab opens on it), then:
 --   Bosses: each boss in order; its loot and its abilities (in the game's own words).
---   Quests: the place's quests for your side and class, who gives each one and where, and the
---           chain of quests that leads to it, with the ones you've done ticked off. "Show on
---           map" puts the game's own map pin on the next one to do (only when you click it).
+--   Quests: the place's quests for your side and class, a chain of quests as one entry (as on
+--           the website). Pick one to see its steps in order, with the ones you've done ticked
+--           off, and the step to do next (or the one you click): who gives it and where, what
+--           it asks and its rewards. "Show on map" puts the game's own map pin on where that
+--           step starts (only when you click it). Horde-only and Alliance-only quests say so.
 --   Map:    the game's own maps of Kalimdor and the Eastern Kingdoms (the world map's art) with
 --           a pin on each entrance. Point at a pin to see the place, click it to open it; point
 --           at a place in the list to light up its pin.
@@ -40,14 +42,17 @@ local BOSS_ROWS, BOSS_HEIGHT = 15, 20
 local LOOT_ROWS, LOOT_HEIGHT = 9, 30
 local ABILITY_ROWS, ABILITY_HEIGHT = 5, 56
 local QUEST_ROWS, QUEST_HEIGHT = 15, 20
-local CHAIN_LINES = 7
+local CHAIN_LINES, STEP_HEIGHT = 6, 15 -- a chain's steps shown at once
 local GREEN, GREY, GOLD = "|cff3fd35c", "|cffb0b0b0", "|cffffd100"
+local SIDE_COLORS = { Horde = "|cffff5b4d", Alliance = "|cff4da6ff" }
 local VIEWS = { "bosses", "quests", "map" }
 local VIEW_TITLES = { bosses = "Bosses", quests = "Quests", map = "Map" }
 local MAPS = ns.JOURNAL_MAPS or {}
 
 local selected -- the place shown (its place in PLACES)
 local boss, quest = 1, 1 -- the boss (one past the last: other drops) and quest shown
+local step -- the chain's step picked (nil: the next one to do)
+local followStep = true -- (scroll the chain's steps to the one shown, once)
 local offset, bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0, 0
 local here -- the dungeon you're in, if it's one of them
 local ui = {}
@@ -109,16 +114,29 @@ local function count(lists, character, seen)
   return n, best
 end
 
--- The quests shown for the character you're playing: its side's and its class's.
+local function forYou(q, side, class)
+  local forClass = not q.classes or #q.classes == 0
+  for _, c in ipairs(q.classes or {}) do forClass = forClass or c == class end
+  return forClass and (q.side == "Both" or q.side == nil or q.side == side)
+end
+
+-- The quests shown for the character you're playing: its side's and its class's. Each is an
+-- entry, { title, side, steps }: a quest on its own (one step) or a chain of them, with only
+-- the steps for you (a chain's lead-in quests too). One whose own quests aren't for you isn't.
 function Journal.Quests(p)
   local side = UnitFactionGroup and UnitFactionGroup("player")
   local _, classFile = UnitClass("player")
   local class = type(classFile) == "string" and classFile:lower() or ""
   local list = {}
-  for _, q in ipairs(p.quests or {}) do
-    local forClass = not q.classes or #q.classes == 0
-    for _, c in ipairs(q.classes or {}) do forClass = forClass or c == class end
-    if forClass and (q.side == "Both" or q.side == nil or q.side == side) then list[#list + 1] = q end
+  for _, e in ipairs(p.quests or {}) do
+    local steps, mine = {}, false
+    for _, q in ipairs(e.steps or { e }) do
+      if forYou(q, side, class) then
+        steps[#steps + 1] = q
+        mine = mine or q.here or e.steps == nil
+      end
+    end
+    if mine then list[#list + 1] = { title = e.title, side = e.side or "Both", steps = steps } end
   end
   return list
 end
@@ -128,7 +146,9 @@ function Journal.Upgrades(p, character)
   local lists = {}
   for _, b in ipairs(p.bosses or {}) do lists[#lists + 1] = b.loot end
   lists[#lists + 1] = p.other or {}
-  for _, q in ipairs(Journal.Quests(p)) do lists[#lists + 1] = q.rewards or {} end
+  for _, e in ipairs(Journal.Quests(p)) do
+    for _, q in ipairs(e.steps) do lists[#lists + 1] = q.rewards or {} end
+  end
   return count(lists, character)
 end
 
@@ -191,6 +211,16 @@ local function done(questID)
   return isDone ~= nil and isDone(questID) == true
 end
 
+-- A quest (or chain step) done: it, or any copy of it shown as it ("also": the same quest at
+-- another of Gnomeregan's Sparklematic machines).
+local function stepDone(q)
+  if done(q.id) then return true end
+  for _, id in ipairs(q.also or {}) do
+    if done(id) then return true end
+  end
+  return false
+end
+
 -- Who or what gives a quest, and where: "Gryan Stoutmantle, Westfall (56.3, 47.5)".
 local function startText(s)
   s = s or {}
@@ -208,12 +238,38 @@ local function startText(s)
   return plain(text ~= "" and text or "not known")
 end
 
--- The next step to take towards a quest: the first in its chain you haven't done, else itself.
-local function nextStep(q)
-  for i, step in ipairs(q.chain or {}) do
-    if not done(step.id) then return step, i end
+-- The next step to take in a chain (or the quest itself): the first you haven't done, else
+-- the last. A step you take first but hand in at the end ("last": Gnomeregan's Rig Wars) isn't
+-- next while a step after it is still to do. Its place in the steps, and whether you've done them all.
+local function nextStep(e)
+  local steps = e.steps
+  for i, q in ipairs(steps) do
+    if not stepDone(q) then
+      local waits = false
+      if q.last then
+        for j = i + 1, #steps do waits = waits or not stepDone(steps[j]) end
+      end
+      if not waits then return i, false end
+    end
   end
-  return q, #(q.chain or {}) + 1
+  return #steps, true
+end
+
+-- A small "Horde" or "Alliance" in the side's colour: a quest or chain only that side has.
+local function sideTag(side)
+  return SIDE_COLORS[side] and (SIDE_COLORS[side] .. side .. "|r") or nil
+end
+
+-- A chain's levels: "Level 26-30".
+local function levelsText(steps)
+  local low, high
+  for _, q in ipairs(steps) do
+    if q.level then
+      low, high = math.min(low or q.level, q.level), math.max(high or q.level, q.level)
+    end
+  end
+  if not low then return end
+  return "Level " .. low .. (high ~= low and ("-" .. high) or "")
 end
 
 -- Puts the game's own map pin on where a quest starts (only ever when you click the button).
@@ -336,62 +392,96 @@ local function showBosses(p, character)
     or (#list > per and (GREY .. "Scroll for more|r") or ""))
 end
 
-local function chainLines(q)
-  local lines = {}
-  local _, nextIndex = nextStep(q)
-  local steps = {}
-  for _, step in ipairs(q.chain or {}) do steps[#steps + 1] = step end
-  steps[#steps + 1] = q
-  for i, step in ipairs(steps) do
-    local mark = done(step.id) and G.Icon("UI-LFG-ReadyMark", 12) or (i == nextIndex and (GOLD .. ">|r") or " ")
-    local color = i == nextIndex and GOLD or (done(step.id) and GREY or "|cffffffff")
-    local title = step == q and (plain(step.title) .. GREY .. " (this quest)|r") or plain(step.title)
-    lines[#lines + 1] = string.format("%s %s%d. %s|r  %s%s|r", mark, color, i, title, GREY,
-      startText(step.start))
-  end
-  return lines
+-- A quest's (or a chain step's) facts: "Level 22 (from 14)  ·  Alliance  ·  Dungeon  ·  Done".
+local function questFacts(q, withSide)
+  local bits = {}
+  if q.level then bits[#bits + 1] = "Level " .. q.level .. (q.min and (" (from " .. q.min .. ")") or "") end
+  if withSide then bits[#bits + 1] = sideTag(q.side) end
+  if q.type and q.type ~= "" then bits[#bits + 1] = plain(q.type) end
+  if q.after then bits[#bits + 1] = "after " .. plain(q.after) end
+  if q.apart then bits[#bits + 1] = "a separate start" end
+  if not q.here then bits[#bits + 1] = "lead-in quest" end
+  if q.repeatable then bits[#bits + 1] = "repeatable" end
+  if q.last then bits[#bits + 1] = "take it first, hand it in last" end
+  if stepDone(q) then bits[#bits + 1] = GREEN .. "Done|r" end
+  return table.concat(bits, "  ·  ")
 end
 
 local function showQuests(p, character)
-  local quests = Journal.Quests(p)
-  questOffset = clamp(questOffset, #quests - QUEST_ROWS)
-  quest = math.max(1, math.min(quest, #quests))
+  local entries = Journal.Quests(p)
+  questOffset = clamp(questOffset, #entries - QUEST_ROWS)
+  quest = math.max(1, math.min(quest, #entries))
   for i, row in ipairs(ui.questRows) do
     local n = i + questOffset
-    local q = quests[n]
-    row:SetShown(q ~= nil)
-    if q then
+    local e = entries[n]
+    row:SetShown(e ~= nil)
+    if e then
       row.index = n
-      row.name:SetText((done(q.id) and (G.Icon("UI-LFG-ReadyMark", 12) .. " ") or "") .. plain(q.title))
-      row.level:SetText(q.level and tostring(q.level) or "")
+      local _, all = nextStep(e)
+      row.name:SetText((all and (G.Icon("UI-LFG-ReadyMark", 12) .. " ") or "") .. plain(e.title))
+      local levels = (levelsText(e.steps) or ""):gsub("^Level ", "")
+      local tag = sideTag(e.side)
+      row.level:SetText((tag and (tag .. " ") or "") .. levels)
       row.selectedBg:SetShown(n == quest)
     end
   end
-  local q = quests[quest]
-  ui.questDetail:SetShown(q ~= nil)
-  ui.noQuests:SetShown(q == nil)
-  if not q then return end
-  local bits = {}
-  if q.level then bits[#bits + 1] = "Level " .. q.level .. (q.min and (" (from " .. q.min .. ")") or "") end
-  if q.side and q.side ~= "Both" then bits[#bits + 1] = q.side end
-  if q.type and q.type ~= "" then bits[#bits + 1] = q.type end
-  if done(q.id) then bits[#bits + 1] = GREEN .. "Done|r" end
-  ui.qTitle:SetText(plain(q.title))
-  ui.qFacts:SetText(table.concat(bits, "  ·  "))
+  local e = entries[quest]
+  ui.questDetail:SetShown(e ~= nil)
+  ui.noQuests:SetShown(e == nil)
+  if not e then return end
+  local steps, chain = e.steps, #e.steps > 1
+  local nextIndex, all = nextStep(e)
+  local shown = math.max(1, math.min(step or nextIndex, #steps))
+  local q = steps[shown]
+  ui.qTitle:SetText(plain(e.title))
+  if chain then
+    local bits = { string.format("Chain: %d quests", #steps), levelsText(steps), sideTag(e.side) }
+    if all then bits[#bits + 1] = GREEN .. "All done|r" end
+    ui.qFacts:SetText(table.concat(bits, "  ·  "))
+  else
+    ui.qFacts:SetText(questFacts(q, true))
+  end
+
+  -- A chain's steps: click one to see it (the next one to do is shown till then).
+  ui.stepArea:SetShown(chain)
+  ui.chainHeading:SetShown(chain)
+  ui.chainMore:SetShown(chain)
+  ui.sTitle:SetShown(chain)
+  ui.qHow:ClearAllPoints()
+  ui.qHow:SetPoint("TOPLEFT", chain and ui.sTitle or ui.qFacts, "BOTTOMLEFT", 0, chain and -4 or -8)
+  ui.qHow:SetPoint("RIGHT")
+  if chain then
+    if followStep then
+      chainOffset = shown - CHAIN_LINES
+      followStep = false
+    end
+    chainOffset = clamp(chainOffset, #steps - CHAIN_LINES)
+    for i, row in ipairs(ui.stepRows) do
+      local n = i + chainOffset
+      local st = steps[n]
+      row:SetShown(st ~= nil)
+      if st then
+        row.index = n
+        local isDone = stepDone(st)
+        local mark = isDone and G.Icon("UI-LFG-ReadyMark", 12) or (n == nextIndex and (GOLD .. ">|r") or " ")
+        local color = (n == nextIndex and not isDone) and GOLD or (isDone and GREY or "|cffffffff")
+        local tag = e.side == "Both" and sideTag(st.side)
+        row.name:SetText(string.format("%s %s%d. %s|r%s", mark, color, n, plain(st.title), tag and ("  " .. tag) or ""))
+        row.level:SetText(st.level and tostring(st.level) or "")
+        row.selectedBg:SetShown(n == shown)
+      end
+    end
+    ui.chainMore:SetText(#steps > CHAIN_LINES and (GREY .. "Scroll for more|r") or "")
+    ui.sTitle:SetText(string.format("%sStep %d: %s|r  %s%s|r", GOLD, shown, plain(q.title), GREY,
+      questFacts(q, e.side == "Both")))
+  end
+
+  -- The quest (or the step shown): who gives it and where, what it asks, its rewards.
   local how = q.start and q.start.kind == "item" and "Starts from " or (q.start and q.start.kind == "object" and "Starts at " or "Get it from ")
   ui.qHow:SetText(GOLD .. how .. "|r" .. startText(q.start))
   ui.qObj:SetText(plain(q.obj or ""))
-  local target = nextStep(q)
-  ui.showButton.target = target.start
-  ui.showButton:SetEnabled(target.start ~= nil and target.start.map ~= nil and target.start.x ~= nil)
-  ui.showButton:SetText(#(q.chain or {}) > 0 and "Show next step on map" or "Show on map")
-  local lines = chainLines(q)
-  ui.chainHeading:SetText(#lines > 1 and string.format("Chain (%d quests)", #lines) or "No quests before it")
-  chainOffset = clamp(chainOffset, #lines - CHAIN_LINES)
-  for i, line in ipairs(ui.chain) do
-    line:SetText(#lines > 1 and lines[i + chainOffset] or "")
-  end
-  ui.chainMore:SetText(#lines > CHAIN_LINES and (GREY .. "Scroll for more|r") or "")
+  ui.showButton.target = q.start
+  ui.showButton:SetEnabled(q.start ~= nil and q.start.map ~= nil and q.start.x ~= nil)
   for i, row in ipairs(ui.rewards) do
     local id = (q.rewards or {})[i]
     row:SetShown(id ~= nil)
@@ -449,9 +539,21 @@ function Journal.ShowView(key)
 end
 
 function Journal.PickPlace(i)
-  selected, boss, quest = i, 1, 1
+  selected, boss, quest, step, followStep = i, 1, 1, nil, true
   bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
   Journal:Refresh()
+end
+
+-- A quest (or chain) in the list: shows its next step to do.
+function Journal.PickQuest(i)
+  quest, step, followStep, chainOffset = i, nil, true, 0
+  Journal:Refresh(true)
+end
+
+-- A step of the chain shown: who gives it and where, what it asks and its rewards.
+function Journal.PickStep(i)
+  step = i
+  Journal:Refresh(true)
 end
 
 -- Opens a place (its game id, or the name of one that has none yet) on the Bosses view: for
@@ -459,7 +561,7 @@ end
 function Journal.Open(id)
   local i = placeIndex(id)
   if not i then return end
-  selected, boss, quest = i, 1, 1
+  selected, boss, quest, step, followStep = i, 1, 1, nil, true
   bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
   GargoyleDB.journal.view = "bosses"
   G.OpenWindow("journal")
@@ -833,10 +935,7 @@ local function createQuests(body)
     row.name = text(row, "GameFontHighlightSmall")
     row.name:SetPoint("LEFT", 6, 0)
     row.name:SetPoint("RIGHT", row.level, "LEFT", -4, 0)
-    row:SetScript("OnClick", function(self)
-      quest, chainOffset = self.index, 0
-      Journal:Refresh(true)
-    end)
+    row:SetScript("OnClick", function(self) Journal.PickQuest(self.index) end)
     ui.questRows[i] = row
   end
   ui.noQuests = text(body, "GameFontDisable", true)
@@ -854,35 +953,48 @@ local function createQuests(body)
   ui.qFacts = text(d, "GameFontDisableSmall")
   ui.qFacts:SetPoint("TOPLEFT", ui.qTitle, "BOTTOMLEFT", 0, -4)
   ui.qFacts:SetPoint("RIGHT")
+  -- A chain's steps, a row each (a long one is cut short rather than pushing the rest down).
+  ui.chainHeading = text(d, "GameFontNormalSmall")
+  ui.chainHeading:SetPoint("TOPLEFT", ui.qFacts, "BOTTOMLEFT", 0, -8)
+  ui.chainHeading:SetText("Steps (click one to see it)")
+  ui.chainMore = text(d, "GameFontDisableSmall")
+  ui.chainMore:SetPoint("LEFT", ui.chainHeading, "RIGHT", 10, 0)
+  ui.stepArea = CreateFrame("Frame", nil, d)
+  ui.stepArea:SetPoint("TOPLEFT", ui.chainHeading, "BOTTOMLEFT", 0, -3)
+  ui.stepArea:SetPoint("RIGHT")
+  ui.stepArea:SetHeight(CHAIN_LINES * STEP_HEIGHT)
+  wheel(ui.stepArea, function(delta) chainOffset = chainOffset - delta * 2 end)
+  ui.stepRows = {}
+  for i = 1, CHAIN_LINES do
+    local row = rowButton(ui.stepArea, 300, STEP_HEIGHT + 1)
+    row:SetPoint("TOPLEFT", 0, -(i - 1) * STEP_HEIGHT)
+    row:SetPoint("RIGHT")
+    row.level = text(row, "GameFontDisableSmall")
+    row.level:SetPoint("RIGHT", -4, 0)
+    row.name = text(row, "GameFontHighlightSmall")
+    row.name:SetPoint("LEFT", 2, 0)
+    row.name:SetPoint("RIGHT", row.level, "LEFT", -4, 0)
+    row:SetScript("OnClick", function(self) Journal.PickStep(self.index) end)
+    ui.stepRows[i] = row
+  end
+  ui.sTitle = text(d, "GameFontHighlightSmall")
+  ui.sTitle:SetPoint("TOPLEFT", ui.stepArea, "BOTTOMLEFT", 0, -8)
+  ui.sTitle:SetPoint("RIGHT")
+  -- The quest, or the step shown.
   ui.qHow = text(d, "GameFontHighlightSmall", true)
   ui.qHow:SetPoint("TOPLEFT", ui.qFacts, "BOTTOMLEFT", 0, -8)
   ui.qHow:SetPoint("RIGHT")
   ui.showButton = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
   ui.showButton:SetSize(170, 20)
   ui.showButton:SetPoint("TOPLEFT", ui.qHow, "BOTTOMLEFT", 0, -6)
+  ui.showButton:SetText("Show on map")
   ui.showButton:SetScript("OnClick", function(self) Journal.ShowOnMap(self.target) end)
-  G.Tooltip(ui.showButton, "Show on map", "Puts the game's own map pin on where the next quest to do starts, as "
-    .. "clicking the world map does. Steps inside a dungeon or started by an item have no pin.")
+  G.Tooltip(ui.showButton, "Show on map", "Puts the game's own map pin on where this quest starts, as "
+    .. "clicking the world map does. Quests started inside a dungeon or by an item have no pin.")
   ui.qObj = text(d, "GameFontHighlightSmall", true)
   ui.qObj:SetPoint("TOPLEFT", ui.showButton, "BOTTOMLEFT", 0, -8)
   ui.qObj:SetPoint("RIGHT")
   ui.qObj:SetMaxLines(3)
-  ui.chainHeading = text(d, "GameFontNormalSmall")
-  ui.chainHeading:SetPoint("TOPLEFT", ui.qObj, "BOTTOMLEFT", 0, -10)
-  local chainArea = CreateFrame("Frame", nil, d)
-  chainArea:SetPoint("TOPLEFT", ui.chainHeading, "BOTTOMLEFT", 0, -4)
-  chainArea:SetPoint("RIGHT")
-  chainArea:SetHeight(CHAIN_LINES * 14)
-  wheel(chainArea, function(delta) chainOffset = chainOffset - delta * 2 end)
-  ui.chain = {} -- (a line each: a long one is cut short rather than pushing the rest down)
-  for i = 1, CHAIN_LINES do
-    local line = text(chainArea, "GameFontHighlightSmall")
-    line:SetPoint("TOPLEFT", 0, -(i - 1) * 14)
-    line:SetPoint("RIGHT")
-    ui.chain[i] = line
-  end
-  ui.chainMore = text(d, "GameFontDisableSmall")
-  ui.chainMore:SetPoint("LEFT", ui.chainHeading, "RIGHT", 10, 0)
   ui.rewardHeading = text(d, "GameFontNormalSmall")
   ui.rewardHeading:SetPoint("BOTTOMLEFT", 0, 30)
   ui.rewardHeading:SetText("Rewards")
@@ -981,7 +1093,7 @@ watcher:SetScript("OnEvent", function(_, event)
   if now ~= here then
     here = now
     if now then -- (opens on the dungeon you've just gone into)
-      selected, boss, quest = now, 1, 1
+      selected, boss, quest, step, followStep = now, 1, 1, nil, true
       bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
     end
     if ui.panel and ui.panel:IsVisible() then Journal:Refresh() end

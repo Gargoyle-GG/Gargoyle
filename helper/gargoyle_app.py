@@ -560,6 +560,7 @@ class App:
         installed = addon_install.installed_version(folder) if folder else None
         linked_folder = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / addon_install.NAME)
         dead_link = bool(folder) and addon_install.is_dead_link(addon_install.addons(folder) / addon_install.NAME)
+        hidden_link = bool(folder) and addon_install.is_hidden_link(addon_install.addons(folder) / addon_install.NAME)
         offer = addon_install.offer(self.versions)
         update = offer["version"] if offer and installed and addon_install.newer(offer["version"], installed) else None
         helper = config.get("helper") is True
@@ -605,6 +606,11 @@ class App:
             game.show("problem", "Addon folder is a broken link",
                       self.install_problem or "It points to a folder that's gone. Install puts a fresh copy there.",
                       ("Install the addon", self.install_addon), primary=True)
+        elif linked_folder and installed is None:  # (never offered Install: the app leaves links alone)
+            game.show("ok", "Addon in a linked folder",
+                      f"{folder.name} (a linked folder: "
+                      + ("the app can't look inside it right now; restart the app to see its version"
+                         if hidden_link else "the app leaves it alone") + f"){with_tips}", check)
         elif installed is None:
             game.show("waiting", "Addon not installed", self.install_problem or f"Game folder: {folder.name}",
                       ("Install the addon", self.install_addon), primary=True)
@@ -652,7 +658,7 @@ class App:
         last = config.get("last_sync")
         last = last if isinstance(last, dict) and isinstance(last.get("at"), (int, float)) else None
         sync = self.cards["sync"]
-        sync_now = ("Sync now", lambda: self.sync(force=True)) if config.token and installed else None
+        sync_now = ("Sync now", lambda: self.sync(force=True)) if config.token and (installed or hidden_link) else None
         if self.busy:
             sync.show("waiting", "Syncing…", last["summary"] if last else "")
         elif self.problem:
@@ -718,9 +724,10 @@ class App:
             name = addon_install.ADDONS[key]
             have = addon_install.installed_version(folder, name) if folder else None
             linked = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / name)
+            hidden = linked and addon_install.is_hidden_link(addon_install.addons(folder) / name)
             out = addon_install.offer(self.versions, key)
             wanted = key in ("addon", "collector") or self.wanted(key)
-            state, text, more = overview.addon_state(have, out["version"] if out else None, wanted, linked)
+            state, text, more = overview.addon_state(have, out["version"] if out else None, wanted, linked, hidden)
             what.configure(text=text, fg=STATE_COLORS[state])
             detail.configure(text=more)
             if folder and wanted and not linked and out and addon_install.newer(out["version"], have):
@@ -1131,7 +1138,7 @@ class App:
             if not folder:
                 return
             todo = [self._addon_update(folder, "addon", install)]
-            if todo[0] or addon_install.installed_version(folder) is not None:  # (the others once Gargoyle's there)
+            if todo[0] or wow_paths.has_addon(folder):  # (the others once Gargoyle's there)
                 # The optional addons when ticked on the Addons tab, and the Data Collector for helpers.
                 todo += [self._addon_update(folder, key, install) for key, _, _ in addon_install.TICKED if self.wanted(key)]
                 if self.config.get("helper") is True:

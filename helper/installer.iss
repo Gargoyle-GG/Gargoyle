@@ -45,6 +45,10 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ; A running Gargoyle is asked to quit before its files are replaced (CloseGargoyle below;
 ; Windows' own closing is the fallback), and is started again afterwards.
+; Inno Setup 6.7 turns on Windows' Redirection Guard for Setup, and the app Setup starts
+; ([Run] below) inherits it, so that copy of the app can't look through a developer's linked
+; addon folder (WinError 448). The guard is kept (Inno's default): the app copes with it
+; (addon_install.is_hidden_link) and never takes such a link for a broken one.
 CloseApplications=force
 RestartApplications=no
 

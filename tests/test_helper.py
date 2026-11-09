@@ -564,6 +564,134 @@ def test_a_broken_link_or_an_update_cut_short_is_put_right(tmp_path):
     assert sorted(p.name for p in addons.iterdir()) == ["Gargoyle"]
 
 
+def guarded(monkeypatch, link):
+    """What Windows' Redirection Guard does to an app an installer started: going through a
+    link made without admin rights fails with WinError 448 (the link itself can still be seen)."""
+    import builtins
+    import io
+    import os
+    import pathlib
+    inside = os.path.normcase(os.path.abspath(link))
+
+    def blocked(path):
+        try:
+            where = os.path.normcase(os.path.abspath(os.fspath(path)))
+        except TypeError:  # (a file descriptor)
+            return False
+        return where == inside or where.startswith(inside + os.sep)
+
+    def refuse(path):
+        raise OSError(22, "The path cannot be traversed because it contains an untrusted mount point", str(path), 448)
+
+    real_stat, real_open = os.stat, io.open
+
+    def stat(path, *args, **kwargs):
+        if blocked(path) and not (kwargs.get("follow_symlinks") is False and os.path.normcase(os.path.abspath(path)) == inside):
+            refuse(path)
+        return real_stat(path, *args, **kwargs)
+
+    def opener(path, *args, **kwargs):
+        if blocked(path):
+            refuse(path)
+        return real_open(path, *args, **kwargs)
+    monkeypatch.setattr(os, "stat", stat)
+    monkeypatch.setattr(io, "open", opener)
+    monkeypatch.setattr(builtins, "open", opener)
+    if hasattr(pathlib, "_NormalAccessor"):  # (Python 3.10's pathlib keeps its own copies)
+        monkeypatch.setattr(pathlib._NormalAccessor, "stat", staticmethod(stat))
+        monkeypatch.setattr(pathlib._NormalAccessor, "open", staticmethod(opener))
+
+
+def test_a_link_the_app_cant_look_through_isnt_broken(tmp_path, monkeypatch):
+    """Started by its installer, the app can't follow a developer's linked addon folder
+    (WinError 448): that link is never called dead, removed or installed over."""
+    import os
+    import shutil
+    _winapi = pytest.importorskip("_winapi")
+    game = tmp_path / "_forever_"
+    addons = game / "Interface" / "AddOns"
+    addons.mkdir(parents=True)
+    source = tmp_path / "repo" / "Gargoyle"
+    source.mkdir(parents=True)
+    (source / "Gargoyle.toc").write_text("## Version: 0.1.0\n")
+    link = addons / "Gargoyle"
+    _winapi.CreateJunction(str(source), str(link))
+    with monkeypatch.context() as m:
+        guarded(m, link)
+        with pytest.raises(OSError):
+            (link / "Gargoyle.toc").read_text()  # (as the app sees it)
+        assert addon_install.is_linked(link) and not addon_install.is_dead_link(link)
+        assert addon_install.is_hidden_link(link) and addon_install.installed_version(game) is None
+        assert wow_paths.has_addon(game)  # (so it still syncs)
+        assert addon_install.repair(game) is None and os.path.lexists(link)
+        data = addon_zip(version="1.0.0")
+        with pytest.raises(addon_install.InstallError, match="link"):
+            addon_install.install(game, data, signed_for(data, "1.0.0"))
+        assert addon_install.is_linked(link)
+    assert (source / "Gargoyle.toc").read_text() == "## Version: 0.1.0\n" and addon_install.installed_version(game) == "0.1.0"
+    assert overview.addon_state(None, "1.0.0", linked=True, hidden=True) == (
+        "ok", "A linked folder", "The app can't look inside it right now (restart the app to see its version)")
+    # A link whose folder really is gone is still dead, and Install still puts it right.
+    shutil.rmtree(tmp_path / "repo")
+    assert addon_install.is_dead_link(link) and not addon_install.is_hidden_link(link)
+    assert addon_install.repair(game) == "removed a link to a folder that's gone" and not os.path.lexists(link)
+    assert not addon_install.missing(OSError(22, "x", "y", 448)) and addon_install.missing(FileNotFoundError())
+
+
+def test_the_window_with_a_link_it_cant_look_through(tmp_path, game_folder, monkeypatch):
+    """The Game card and the Addons tab say it calmly, never offer Install, and the window's
+    loops don't keep failing on it."""
+    import shutil
+    tk = pytest.importorskip("tkinter")
+    _winapi = pytest.importorskip("_winapi")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("GARGOYLE_SITE", "https://gargoyle.gg")
+    import gargoyle_app
+    monkeypatch.setattr(gargoyle_app.App, "start_tray", lambda self: None)
+    monkeypatch.setattr(gargoyle_app.App, "check_versions", lambda self, *a, **k: None)
+    monkeypatch.setattr(startup, "enabled", lambda: False)
+    core = game_folder / "Interface" / "AddOns" / "Gargoyle"
+    source = tmp_path / "repo" / "Gargoyle"
+    shutil.copytree(core, source)
+    shutil.rmtree(core)
+    _winapi.CreateJunction(str(source), str(core))
+    config = Config()
+    config.data.update(game_folder=str(game_folder), user="Sam")
+    config.token = "t"
+    guarded(monkeypatch, core)
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display")
+    try:
+        root.withdraw()
+        app = gargoyle_app.App(root)
+        app.versions = release(addon_version="99.0")
+        monkeypatch.setattr(app.syncer, "due", lambda: False)
+        app.refresh()
+        app.tick()
+        game = app.cards["game"]
+        shown = []
+
+        def texts(widget):
+            for child in widget.winfo_children():
+                try:
+                    shown.append(child.cget("text"))
+                except tk.TclError:
+                    pass
+                texts(child)
+        texts(root)
+        assert "Addon in a linked folder" in shown and not any("broken link" in str(t) for t in shown)
+        assert any("can't look inside it right now" in str(t) for t in shown)
+        assert game.action is None or game.action.cget("text") == "Check for updates"
+        row, what, detail = app.addon_rows["addon"]
+        assert what.cget("text") == "A linked folder" and "restart the app" in detail.cget("text")
+        assert "Something went wrong" not in app.log_box.get("1.0", "end")
+        assert addon_install.is_linked(core)
+    finally:
+        root.destroy()
+
+
 def test_the_app_installer_is_signed_after_the_build(release_key):
     import base64
     import version

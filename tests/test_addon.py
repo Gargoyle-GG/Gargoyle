@@ -608,7 +608,7 @@ API = {  # what /api/app/sync answers (see app_api.py)
 
 class Game:
     def __init__(self, sync=None, saved=None, now=NOW, tooltips=False, journal=None, before=None, collector=False,
-                 dungeons=True, loot=False, loot_data=None, fishing=False):
+                 dungeons=True, loot=False, loot_data=None, fishing=False, extra=()):
         self.lua = lua51.LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(FAKE_GAME)
         self.fake = self.lua.globals().fake
@@ -638,6 +638,10 @@ class Game:
         self.fns = self.lua.table()  # (Gargoyle_Fishing's own)
         if fishing:
             self.load_module(FISHING, "Gargoyle_Fishing", self.fns, {})
+        self.extra = {}  # (other module addons a test file brings: (folder, name, stand-in files) -> its own table)
+        for folder, name, instead in extra:
+            self.extra[name] = self.lua.table()
+            self.load_module(folder, name, self.extra[name], instead)
         if tooltips:  # (the game loads it after Gargoyle: its name comes later)
             self.tips_ns = self.lua.table()
             toc = (TOOLTIPS / "Gargoyle_Tooltips.toc").read_text(encoding="utf-8").splitlines()
@@ -1747,19 +1751,19 @@ def tooltip_game(**kw):
 
 def test_frostbolt_breakdown():
     game = tooltip_game()
-    text = game.fake.spellTooltip(116)  # Frostbolt rank 1: 19 to 21, 40.7% of spell damage
-    # (19 + 81.4) x 1.03 Arcane Instability; crits do 200% with Ice Shards.
+    text = game.fake.spellTooltip(116)  # Frostbolt rank 1: 17 to 21, 40.7% of spell damage
+    # (17 + 81.4) x 1.03 Arcane Instability; crits do 200% with Ice Shards.
     assert text.splitlines() == [
         "A spell", " ", "Direct damage · Frost",
-        "Base | 19 – 21",
+        "Base | 17 – 21",
         "Spell damage 200 × 40.7% | +81",
         "Talents | × 1.03",
         "  Arcane Instability +3%",
-        "Total damage | 103 – 105",
-        "Crit 10% for 200% | avg 115",
-        "Average damage per cast | 115",
-        "Per second of casting (1.5 sec) | 77",
-        "Per mana (25 mana) | 4.6",
+        "Total damage | 101 – 105",
+        "Crit 10% for 200% | avg 114",
+        "Average damage per cast | 114",
+        "Per second of casting (1.5 sec) | 76",
+        "Per mana (25 mana) | 4.55",
     ]
 
 
@@ -1769,7 +1773,7 @@ def test_talents_are_read_again_after_they_change():
     game.lua.execute("fake.char.talents[3] = {}")
     assert "Crit 10% for 200%" in game.fake.spellTooltip(116)  # (until the game says they changed)
     game.fake.fire("TRAIT_CONFIG_UPDATED")
-    assert "Crit 10% for 150% | avg 110" in game.fake.spellTooltip(116)
+    assert "Crit 10% for 150% | avg 109" in game.fake.spellTooltip(116)
 
 
 def test_spells_without_a_breakdown_and_secret_numbers_add_nothing():
@@ -1779,6 +1783,160 @@ def test_spells_without_a_breakdown_and_secret_numbers_add_nothing():
     assert game.fake.spellTooltip(116) == "A spell"
     game.lua.execute("issecretvalue = function() return false end; GetSpellBonusDamage = function() error('boom') end")
     assert game.fake.spellTooltip(116) == "A spell"  # (a problem adds nothing, half or otherwise)
+
+
+# In a fight WoW Forever hides your stats from addons ("secret" values): the tooltip then
+# uses the ones remembered from before, and says so.
+NOTE = "In combat the game hides your stats: these use the ones from before the fight."
+STAT_FUNCTIONS = ("GetSpellBonusDamage", "GetSpellBonusHealing", "GetSpellCritChance", "GetCritChance",
+                  "GetRangedCritChance", "UnitAttackPower", "UnitRangedAttackPower", "UnitDamage", "UnitRangedDamage")
+
+
+def hide_stats(game):
+    """The game starts hiding the stats: every stat function answers a secret marker."""
+    game.lua.execute("""
+        fake.hidden = fake.hidden or {}
+        issecretvalue = function(v) return v == fake.hidden end
+        fake.revealed = fake.revealed or {}
+        for _, name in ipairs({ %s }) do
+          fake.revealed[name] = fake.revealed[name] or _G[name]
+          _G[name] = function() return fake.hidden, fake.hidden, fake.hidden end
+        end
+    """ % ", ".join(f'"{n}"' for n in STAT_FUNCTIONS))
+
+
+def reveal_stats(game):
+    game.lua.execute("""
+        issecretvalue = function() return false end
+        for name, fn in pairs(fake.revealed) do _G[name] = fn end
+    """)
+
+
+def test_out_of_combat_there_is_no_note():
+    game = tooltip_game()
+    assert NOTE not in game.fake.spellTooltip(116)
+
+
+def test_in_combat_the_tooltip_uses_the_stats_from_before_and_says_so():
+    game = tooltip_game()
+    before = game.fake.spellTooltip(116)  # (read while the game allowed it)
+    game.lua.execute("fake.stats.spellDamage[5] = 999")  # (a change nobody can see in the fight)
+    hide_stats(game)
+    assert game.fake.spellTooltip(116) == before + "\n" + NOTE
+    assert game.fake.spellTooltip(116) == before + "\n" + NOTE  # (and again)
+
+
+def test_the_stats_are_remembered_before_any_tooltip_is_shown():
+    game = tooltip_game()
+    plain_text = game.fake.spellTooltip(116)
+    game = tooltip_game()
+    game.fake.fire("PLAYER_ENTERING_WORLD", True, False)  # (logging in)
+    hide_stats(game)  # the fight starts; the first tooltip of it
+    assert game.fake.spellTooltip(116) == plain_text + "\n" + NOTE
+
+
+@pytest.mark.parametrize("event", ["PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED"])
+def test_login_and_the_end_of_a_fight_read_the_stats_at_once(event):
+    game = tooltip_game()
+    plain_text = game.fake.spellTooltip(116)
+    game = tooltip_game()
+    game.fake.fire(event)
+    hide_stats(game)
+    assert game.fake.spellTooltip(116) == plain_text + "\n" + NOTE
+
+
+@pytest.mark.parametrize("event", ["UNIT_STATS", "PLAYER_DAMAGE_DONE_MODS", "COMBAT_RATING_UPDATE", "UNIT_ATTACK_POWER",
+                                   "UNIT_RANGED_ATTACK_POWER", "UNIT_INVENTORY_CHANGED", "PLAYER_EQUIPMENT_CHANGED",
+                                   "SPELL_POWER_CHANGED", "UNIT_AURA"])
+def test_changes_to_your_stats_read_them_again_in_one_go(event):
+    game = tooltip_game()
+    before = game.fake.spellTooltip(116)
+    game = tooltip_game()
+    # (a burst of changes: one read, a moment later; some events say whose, some don't)
+    args = ("player",) if event.startswith("UNIT_") else (16,) if event == "PLAYER_EQUIPMENT_CHANGED" else ()
+    game.fake.fire(event, *args)
+    game.fake.fire(event, *args)
+    assert len(game.fake.timers) == 1
+    game.fake.runTimers()
+    hide_stats(game)
+    assert game.fake.spellTooltip(116) == before + "\n" + NOTE
+
+
+def test_other_peoples_changes_are_not_read():
+    game = tooltip_game()
+    game.fake.fire("UNIT_AURA", "target")
+    game.fake.fire("UNIT_STATS", "party1")
+    assert len(game.fake.timers) == 0
+
+
+def test_stats_that_were_hidden_from_the_start_add_nothing():
+    game = tooltip_game()
+    hide_stats(game)  # (say a /reload in the middle of a fight)
+    assert game.fake.spellTooltip(116) == "A spell"
+    game.fake.fire("PLAYER_ENTERING_WORLD", False, True)
+    game.fake.fire("UNIT_AURA", "player")
+    game.fake.runTimers()
+    assert game.fake.spellTooltip(116) == "A spell"  # (hidden is never taken for 0)
+
+
+def test_a_hidden_stat_never_replaces_a_remembered_one_and_readable_ones_refresh_it():
+    game = tooltip_game()
+    before = game.fake.spellTooltip(116)  # 200 spell damage, 10% crit
+    hide_stats(game)
+    game.lua.execute("fake.stats.spellDamage[5] = 300")
+    game.fake.fire("PLAYER_ENTERING_WORLD", False, False)
+    game.fake.fire("UNIT_AURA", "player")
+    game.fake.runTimers()
+    assert game.fake.spellTooltip(116) == before + "\n" + NOTE  # (still the 200)
+    # The fight is over: the real numbers are back, no note.
+    reveal_stats(game)
+    game.fake.fire("PLAYER_REGEN_ENABLED")
+    after = game.fake.spellTooltip(116)
+    assert "Spell damage 300 × 40.7% | +122" in after and NOTE not in after
+    # And the next fight uses those.
+    hide_stats(game)
+    assert game.fake.spellTooltip(116) == after + "\n" + NOTE
+
+
+def test_a_stat_read_while_showing_a_tooltip_is_remembered_too():
+    game = tooltip_game()
+    game.lua.execute("fake.stats.spellCrit = 25")
+    assert "Crit 25% for 200%" in game.fake.spellTooltip(116)
+    hide_stats(game)
+    text = game.fake.spellTooltip(116)
+    assert "Crit 25% for 200%" in text and text.endswith(NOTE)
+
+
+@pytest.mark.parametrize("token", ["WARRIOR", "HUNTER", "PRIEST", "ROGUE", "DRUID"])
+def test_melee_ranged_and_healing_stats_are_remembered_too(token):
+    game = Game(tooltips=False)
+    game.lua.execute("""
+        UnitClass = function() return "X", "%s", 1 end
+        fake.stats = { spellDamage = { 300, 300, 300, 300, 300, 300, 300 }, healing = 500, spellCrit = 8, crit = 12,
+                       ap = 1200, weapon = { 150, 250 } }
+    """ % token)
+    tips = game.lua.table()
+    run = game.lua.eval('function(src, name, ns) local f = assert(loadstring(src, "@" .. name)); f("Gargoyle_Tooltips", ns) end')
+    for name in (line.strip() for line in (TOOLTIPS / "Gargoyle_Tooltips.toc").read_text(encoding="utf-8").splitlines()):
+        if name and not name.startswith("#"):
+            run((TOOLTIPS / name.replace("\\\\", "/").replace("\\", "/")).read_text(encoding="utf-8"), name, tips)
+    lines = game.lua.eval("function(id) local ok, lines = pcall(GargoyleTooltips.Lines, id); assert(ok, lines); return lines end")
+    spells = list(getattr(tips.data, token).spells.keys())
+
+    def texts(spell_id):
+        result = lines(spell_id)
+        return None if result is None else [r[1] for r in result.values()]
+
+    # Nothing remembered yet and the game hides everything: no spell has anything to say.
+    hide_stats(game)
+    assert all(texts(spell_id) is None for spell_id in spells)
+    reveal_stats(game)
+    normal = {spell_id: texts(spell_id) for spell_id in spells}
+    assert all(rows and not rows[-1].startswith("In combat") for rows in normal.values())
+    hide_stats(game)
+    game.lua.execute("fake.stats = { spellDamage = {}, healing = 0, spellCrit = 0, crit = 0, ap = 0, weapon = { 1, 1 } }")
+    for spell_id in spells:
+        assert texts(spell_id) == normal[spell_id] + [NOTE], spell_id
 
 
 def test_turned_on_and_off_in_gargoyles_options():
@@ -1853,25 +2011,51 @@ ns.JOURNAL = {
     },
     other = { { 1156, 1.5 } },
     quests = {
-      { id = 166, title = "The Defias Brotherhood", level = 22, min = 14, side = "Alliance", type = "Dungeon",
-        obj = "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle.",
-        start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" },
-        rewards = { 6087, 2041 },
-        chain = {
-          { id = 65, title = "The Defias Brotherhood", level = 18,
-            start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" } },
-          { id = 132, title = "The Defias Brotherhood", level = 18,
-            start = { kind = "npc", name = "Wiley the Black", map = 1433, x = 21.4, y = 45.3, zone = "Redridge Mountains" } },
-        } },
-      { id = 373, title = "The Unsent Letter", level = 22, side = "Alliance",
-        start = { kind = "item", name = "An Unsent Letter", drop = "Edwin VanCleef, Deadmines" }, rewards = {}, chain = {} },
-      { id = 2040, title = "Underground Assault", level = 20, side = "Horde",
-        start = { kind = "npc", name = "Shoni the Shilent", map = 1453, x = 55, y = 12, zone = "Orgrimmar" }, rewards = {}, chain = {} },
+      { title = "The Defias Brotherhood", side = "Alliance", steps = {
+        { id = 65, title = "The Defias Brotherhood", level = 18, side = "Alliance",
+          start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" } },
+        { id = 132, title = "The Defias Brotherhood", level = 18, side = "Alliance", obj = "Find Wiley.",
+          start = { kind = "npc", name = "Wiley the Black", map = 1433, x = 21.4, y = 45.3, zone = "Redridge Mountains" } },
+        { id = 166, title = "The Defias Brotherhood", level = 22, min = 14, side = "Alliance", type = "Dungeon", here = true,
+          obj = "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle.",
+          start = { kind = "npc", name = "Gryan Stoutmantle", map = 1436, x = 56.3, y = 47.5, zone = "Westfall" },
+          rewards = { 6087, 2041 } },
+      } },
+      { title = "The Unsent Letter", side = "Alliance", steps = {
+        { id = 373, title = "The Unsent Letter", level = 22, side = "Alliance", here = true,
+          start = { kind = "item", name = "An Unsent Letter", drop = "Edwin VanCleef, Deadmines" } },
+      } },
+      { title = "Underground Assault", side = "Horde", steps = {
+        { id = 2040, title = "Underground Assault", level = 20, side = "Horde", here = true,
+          start = { kind = "npc", name = "Shoni the Shilent", map = 1453, x = 55, y = 12, zone = "Orgrimmar" } },
+      } },
+      { title = "Grime-Encrusted Ring", side = "Both", steps = {
+        { id = 2945, title = "Grime-Encrusted Ring", level = 21, side = "Both", here = true,
+          start = { kind = "item", name = "Grime-Encrusted Ring", drop = "Defias Pirate, Deadmines" } },
+        { id = 2947, title = "Return of the Ring", level = 21, side = "Alliance", here = true, after = "Grime-Encrusted Ring",
+          start = { kind = "object", name = "The Sparklematic 5200", inside = "Deadmines" }, rewards = { 5193 } },
+        { id = 2949, title = "Return of the Ring", level = 21, side = "Horde", here = true, after = "Grime-Encrusted Ring",
+          start = { kind = "object", name = "The Sparklematic 5200", inside = "Deadmines" }, rewards = { 5191 } },
+      } },
     },
   },
   { id = 33, name = "Shadowfang Keep", kind = "dungeon", size = 5, min = 20, max = 30, zone = "Silverpine Forest",
     pin = { map = 1415, x = 29.8, y = 32.8 },
-    bosses = { { name = "Archmage Arugal", loot = { { 6392, 10 } }, abilities = {} } }, other = {} },
+    bosses = { { name = "Archmage Arugal", loot = { { 6392, 10 } }, abilities = {} } }, other = {},
+    quests = {
+      { title = "The Sparklematic 5200!", side = "Both", steps = {
+        { id = 2951, also = { 2952, 4601, 4605 }, title = "The Sparklematic 5200!", level = 30, side = "Both", here = true,
+          start = { kind = "object", name = "The Sparklematic 5200", inside = "Gnomeregan" } },
+      } },
+      { title = "Rig Wars", side = "Both", steps = {
+        { id = 2841, title = "Rig Wars", level = 35, side = "Both", here = true, last = true,
+          start = { kind = "npc", name = "Nogg", map = 1454, x = 76, y = 25.4, zone = "Orgrimmar" } },
+        { id = 2842, title = "Chief Engineer Scooty", level = 35, side = "Both", here = true,
+          start = { kind = "npc", name = "Sovik", map = 1454, x = 75.5, y = 25.4, zone = "Orgrimmar" } },
+        { id = 2843, title = "Gnomer-gooooone!", level = 35, side = "Both", here = true, repeatable = true,
+          start = { kind = "npc", name = "Scooty", map = 1434, x = 27.6, y = 77.5, zone = "Stranglethorn Vale" } },
+      } },
+    } },
   { name = "Alcaz Prison", kind = "dungeon", size = 5, min = 48, max = 53, zone = "Dustwallow Marsh", new = true,
     when = "Coming at launch", expected = true, pin = { map = 1414, x = 75.6, y = 62.4 }, bosses = {}, other = {} },
   { name = "Hyjal Summit", kind = "raid", size = 20, min = 60, max = 60, zone = "Mount Hyjal", new = true, bossCount = 13,
@@ -2009,33 +2193,132 @@ def test_not_yet_released_raids_and_a_game_without_the_map_art():
     assert "Raids not released yet aren't on the map." in game.texts()
 
 
-def test_the_quests_view_shows_how_to_get_each_quest_and_its_chain():
+def visible_lines(game, part):
+    return [w.text for w in game.fake.widgets.values() if w.kind == "FontString" and w.IsVisible(w) and part in w.text]
+
+
+def test_the_quests_view_has_one_row_per_chain_and_shows_its_steps():
     game = journal_game(before="fake.questsDone[65] = true")
-    view_button(game, "Quests (2)").Click(view_button(game, "Quests (2)"))  # (the Horde quest isn't for a Human)
+    view_button(game, "Quests (3)").Click(view_button(game, "Quests (3)"))  # (the Horde quest isn't for a Human)
     text = game.texts()
-    assert "The Defias Brotherhood" in text and "Underground Assault" not in text
-    assert "Level 22 (from 14)  ·  Alliance  ·  Dungeon" in text
+    assert "Underground Assault" not in text and "Grime-Encrusted Ring" in text
+    rows = [w.text for w in game.fake.widgets.values() if w.kind == "FontString" and w.IsVisible(w)
+            and w.parent.kind == "Button" and w.parent.index and w.text.endswith(("Brotherhood", "Letter", "Ring"))]
+    assert rows == ["The Defias Brotherhood", "The Unsent Letter", "Grime-Encrusted Ring"]  # (one row for the chain)
+    # The chain: its steps, the done one ticked, and the next one to do shown.
+    assert "Chain: 3 quests  ·  Level 18-22  ·  |cff4da6ffAlliance|r" in text
+    steps = visible_lines(game, ". The Defias")
+    assert steps[0].startswith("|A:UI-LFG-ReadyMark") and "1. The Defias Brotherhood" in steps[0]  # done
+    assert "|cffffd100>|r |cffffd1002. The Defias Brotherhood|r" in steps[1]
+    assert "3. The Defias Brotherhood" in steps[2]
+    assert "Step 2: The Defias Brotherhood|r  |cffb0b0b0Level 18  ·  lead-in quest|r" in text
+    assert "Get it from |rWiley the Black, Redridge Mountains (21.4, 45.3)" in text and "Find Wiley." in text
+    # Click a step: its giver, what it asks and its rewards.
+    click_row(game, "3. The Defias Brotherhood")
+    text = game.texts()
+    assert "Step 3: The Defias Brotherhood|r  |cffb0b0b0Level 22 (from 14)  ·  Dungeon|r" in text
     assert "Get it from |rGryan Stoutmantle, Westfall (56.3, 47.5)" in text
-    assert "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle." in text and "Chain (3 quests)" in text
-    lines = [w.text for w in game.fake.widgets.values() if w.kind == "FontString" and w.IsVisible(w) and ". The Defias" in w.text]
-    assert lines[0].startswith("|A:UI-LFG-ReadyMark") and "1. The Defias Brotherhood" in lines[0]  # done
-    assert "|cffffd100>|r |cffffd1002. The Defias Brotherhood|r" in lines[1] and "Wiley the Black, Redridge Mountains" in lines[1]
-    assert "(this quest)" in lines[2]
+    assert "Kill Edwin VanCleef and bring his head to Gryan Stoutmantle." in text
     rewards = [w for w in game.fake.widgets.values() if w.kind == "Button" and w.IsVisible(w) and w.itemID in (6087, 2041)]
     assert len(rewards) == 2 and [r.upgrade.shown for r in sorted(rewards, key=lambda r: r.itemID)] == [True, False]
+    # A quest on its own: no steps.
     click_row(game, "The Unsent Letter")
-    assert "Starts from |ran item, An Unsent Letter, which drops from Edwin VanCleef, Deadmines" in game.texts()
+    text = game.texts()
+    assert "Starts from |ran item, An Unsent Letter, which drops from Edwin VanCleef, Deadmines" in text
+    assert "Level 22  ·  |cff4da6ffAlliance|r" in text and "Steps (click one to see it)" not in text
     assert not game.fake.button("Show on map").enabled  # (nowhere to pin)
 
 
-def test_show_on_map_pins_the_next_step_only_when_clicked():
+def sfk_quests(done=""):
+    game = journal_game(before=done)
+    game.ns.Journal.PickPlace(2)  # (Shadowfang Keep, in the stand-in data)
+    game.ns.Journal.ShowView("quests")
+    return game
+
+
+def test_a_quest_shown_once_for_its_copies_is_done_when_any_copy_is():
+    game = sfk_quests()
+    assert view_button(game, "Quests (").text == "Quests (2)"
+    rows = visible_lines(game, "The Sparklematic 5200!")
+    assert rows and not any("ReadyMark" in r for r in rows)
+    assert "Done|r" not in game.texts()
+    game = sfk_quests("fake.questsDone[4605] = true")  # (the copy at another machine)
+    rows = [r for r in visible_lines(game, "The Sparklematic 5200!") if "ReadyMark" in r]
+    assert rows and "|cff3fd35cDone|r" in game.texts()
+
+
+def test_the_next_step_isnt_a_quest_you_hand_in_last():
+    # Nothing done: the next step marked is Scooty's; Rig Wars says to take it first and hand it in last.
+    game = sfk_quests()
+    click_row(game, "Rig Wars")
+    assert "Step 2: Chief Engineer Scooty|r" in game.texts()
+    assert any("|cffffd100>|r |cffffd1002. Chief Engineer Scooty" in line for line in visible_lines(game, "2. Chief"))
+    assert not any(">|r" in line for line in visible_lines(game, "1. Rig Wars"))
+    click_row(game, "1. Rig Wars")
+    assert "Step 1: Rig Wars|r  |cffb0b0b0Level 35  ·  take it first, hand it in last|r" in game.texts()
+    # Rig Wars in your log (not done), Scooty done: the next step is Gnomer-gooooone!, not Rig Wars.
+    game = sfk_quests("fake.questsDone[2842] = true")
+    click_row(game, "Rig Wars")
+    text = game.texts()
+    assert "Step 3: Gnomer-gooooone!|r" in text and "repeatable" in text
+    assert any("|cffffd100>|r |cffffd1003. Gnomer-gooooone!" in line for line in visible_lines(game, "3. Gnomer"))
+    assert not any(">|r" in line for line in visible_lines(game, "1. Rig Wars"))
+    # The other steps done: now it's Rig Wars' turn (hand it in).
+    game = sfk_quests("fake.questsDone[2842] = true; fake.questsDone[2843] = true")
+    click_row(game, "Rig Wars")
+    assert "Step 1: Rig Wars|r" in game.texts() and "All done" not in game.texts()
+    game = sfk_quests("fake.questsDone[2841] = true; fake.questsDone[2842] = true; fake.questsDone[2843] = true")
+    click_row(game, "Rig Wars")
+    assert "|cff3fd35cAll done|r" in game.texts()
+
+
+def test_side_only_quests_are_tagged_and_a_chain_shows_only_your_sides_steps():
+    game = journal_game()
+    view_button(game, "Quests").Click(view_button(game, "Quests"))
+    rows = visible_lines(game, "|cff4da6ffAlliance|r")
+    assert "|cff4da6ffAlliance|r 18-22" in rows and "|cff4da6ffAlliance|r 22" in rows  # (the list's rows)
+    click_row(game, "Grime-Encrusted Ring")
+    text = game.texts()
+    assert "Chain: 2 quests  ·  Level 21" in text and "Chain: 2 quests  ·  Level 21  ·" not in text  # (both sides have it)
+    steps = visible_lines(game, "Return of the Ring")
+    assert any("2. Return of the Ring|r  |cff4da6ffAlliance|r" in line for line in steps)
+    assert "Horde" not in text  # (the Horde's copy isn't for a Human)
+    click_row(game, "2. Return of the Ring")
+    assert "|cff4da6ffAlliance|r  ·  after Grime-Encrusted Ring" in game.texts()
+    # A Horde character sees the Horde's quests, tagged in red, and the Horde's step.
+    game = journal_game(before='UnitFactionGroup = function() return "Horde", "Horde" end')
+    view_button(game, "Quests (2)").Click(view_button(game, "Quests (2)"))
+    text = game.texts()
+    assert "Underground Assault" in text and "The Defias Brotherhood" not in text and "|cffff5b4dHorde|r 20" in text
+    click_row(game, "Grime-Encrusted Ring")
+    assert any("2. Return of the Ring|r  |cffff5b4dHorde|r" in line for line in visible_lines(game, "Return of the Ring"))
+
+
+def test_a_chain_done_is_ticked_and_its_rewards_count_as_upgrades():
+    game = journal_game(before="fake.questsDone[65] = true; fake.questsDone[132] = true; fake.questsDone[166] = true")
+    view_button(game, "Quests").Click(view_button(game, "Quests"))
+    text = game.texts()
+    assert "|cff3fd35cAll done|r" in text and "Step 3: The Defias Brotherhood" in text  # (the last step)
+    rows = visible_lines(game, "The Defias Brotherhood")
+    assert any(r.startswith("|A:UI-LFG-ReadyMark") and r.endswith("The Defias Brotherhood") for r in rows)
+    # Every step's rewards count (Tunic of Westfall is the last step's).
+    journal = game.ns.Journal
+    character = journal.Chosen()
+    n, _ = journal.Upgrades(game.dns.JOURNAL[1], character)
+    assert n == 3
+
+
+def test_show_on_map_pins_the_step_shown_only_when_clicked():
     game = journal_game(before="fake.questsDone[65] = true")
     view_button(game, "Quests").Click(view_button(game, "Quests"))
     assert list(game.fake.pins.values()) == []  # (never on its own)
-    game.click("Show next step on map")
+    game.click("Show on map")  # (the next step to do)
     (pin,) = game.fake.pins.values()
     assert (pin.uiMapID, round(pin.x, 3), round(pin.y, 3)) == (1433, 0.214, 0.453) and game.fake.tracking is True
     assert "map pin set: Wiley the Black, Redridge Mountains (21.4, 45.3)." in game.printed()
+    click_row(game, "1. The Defias Brotherhood")
+    game.click("Show on map")
+    assert [round(p.x, 3) for p in game.fake.pins.values()] == [0.214, 0.563]
 
 
 def test_the_view_part_and_character_are_kept():
@@ -2135,6 +2418,29 @@ def test_the_real_journal_data_loads_and_scrolls():
         for view in ("bosses", "quests", "map"):
             journal.ShowView(view)
     assert len(list(game.dns.JOURNAL_MAPS.values())) == 2
+    # Each chain of quests is one entry, as on the website (quest_chains.py): Gnomeregan's 24 are about 10.
+    # (The counts come from the data: the source keeps adjusting its quest chains.)
+    gnomeregan = next(p for p in places if p.name == "Gnomeregan")
+    entries = list(gnomeregan.quests.values())
+    assert len(entries) < 24 and all(any(s.here for s in e.steps.values()) for e in entries)
+    assert sum(len(e.steps) for e in entries) >= 19
+    website = PROJECT / "data" / "dungeons.json"  # (the website's: not in the addon's own repository)
+    if website.is_file():
+        import json
+        from quest_chains import group_quests
+        data = json.loads(website.read_text(encoding="utf-8"))
+        grouped = group_quests(next(p for p in data["places"] if p["name"] == "Gnomeregan")["quests"])
+        assert len(entries) == len(grouped)
+        assert sum(len(e.steps) for e in entries) == sum(len(e["steps"]) for e in grouped)
+    # (the three Sparklematic 5200s: one step, done when any copy is)
+    sparkle = next(e for e in entries if e.title == "The Sparklematic 5200!")
+    assert len(sparkle.steps) == 1 and sorted([sparkle.steps[1].id, *sparkle.steps[1].also.values()]) == [
+        2951, 2952, 4601, 4602, 4605, 4606]
+    rig = next(e for e in entries if e.title == "Rig Wars")
+    assert [s.title for s in rig.steps.values()] == ["Rig Wars", "Chief Engineer Scooty", "Gnomer-gooooone!"] and rig.steps[1].last
+    journal.PickPlace(places.index(gnomeregan) + 1)
+    journal.ShowView("quests")
+    assert view_button(game, "Quests (").text == "Quests (9)"  # (an Alliance Mage: not the Horde's Rig Wars chain)
 
 
 # ---- The data collector (addon/Gargoyle_Collector) ----

@@ -86,10 +86,53 @@ def is_linked(folder):
     return bool(getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
 
 
+# Windows' errors for a path that isn't there: file or path not found, bad drive, network
+# path or name gone, a bad name, and a file where a folder should be.
+MISSING_WINERRORS = {2, 3, 15, 53, 67, 123, 161, 267}
+
+
+def missing(exc):
+    """Does this error mean the path really isn't there (rather than "can't look")?"""
+    return (isinstance(exc, (FileNotFoundError, NotADirectoryError))
+            or getattr(exc, "winerror", None) in MISSING_WINERRORS)
+
+
+def _link_target(folder):
+    """A link's target: "there", "gone", or "hidden" (it may well be there, but Windows won't
+    let the app through the link: an app started by an installer with Windows' Redirection
+    Guard on can't follow a link made without admin rights, WinError 448, and access can be
+    denied too)."""
+    try:
+        os.stat(folder)
+    except OSError as exc:
+        return "gone" if missing(exc) else "hidden"
+    return "there"
+
+
 def is_dead_link(folder):
-    """A link to a folder that's gone (moved or deleted): neither the game nor the app can
-    read it, and it's in the way of installing."""
-    return is_linked(folder) and not os.path.exists(folder)
+    """A link to a folder that's really gone (moved or deleted): neither the game nor the app
+    can read it, and it's in the way of installing. A link the app merely can't look through
+    isn't dead: it's left alone."""
+    return is_linked(folder) and _link_target(folder) == "gone"
+
+
+def is_hidden_link(folder):
+    """A link the app can't look through right now (its target is probably fine)."""
+    return is_linked(folder) and _link_target(folder) == "hidden"
+
+
+def _is_dir(path):
+    try:
+        return stat.S_ISDIR(os.stat(path).st_mode)
+    except OSError:
+        return False
+
+
+def _is_file(path):
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except OSError:
+        return False
 
 
 def repair(game_folder, name=NAME, links=True):
@@ -106,7 +149,8 @@ def repair(game_folder, name=NAME, links=True):
         except OSError:
             os.unlink(target)
         done.append("removed a link to a folder that's gone")
-    if not os.path.lexists(target) and old.is_dir() and not is_linked(old) and (old / f"{name}.toc").is_file():
+    if (not os.path.lexists(target) and not is_linked(old) and _is_dir(old)
+            and _is_file(old / f"{name}.toc")):
         os.replace(old, target)
         done.append("put back the copy an update cut short had moved aside")
     return " and ".join(done) or None

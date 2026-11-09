@@ -58,7 +58,16 @@ def _candidates():
 
 
 def has_addon(folder):
-    return (Path(folder) / "Interface" / "AddOns" / "Gargoyle" / "Gargoyle.toc").is_file()
+    """Is the Gargoyle addon there? (A linked Gargoyle folder the app can't look through,
+    which Windows does to an app an installer started, counts: it's the developer's copy.)"""
+    import addon_install  # (here: it's only needed for this)
+    core = Path(folder) / "Interface" / "AddOns" / "Gargoyle"
+    try:
+        if (core / "Gargoyle.toc").is_file():
+            return True
+    except OSError:  # (Python only takes "not there" for an answer from a few of Windows' errors)
+        pass
+    return addon_install.is_hidden_link(core)
 
 
 def version_folders(install):
