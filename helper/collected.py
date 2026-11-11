@@ -2,8 +2,9 @@
 
 Helpers are players who agreed to help keep gargoyle.gg's game data up to date. Once a helper
 has typed their helper code into the app's Settings, the app installs the collector addon,
-which notes what their game shows them about items, spells, talents and trainers (in
-GargoyleCollectorDB, one saved file per WoW account). Nothing is sent on its own: only the
+which notes what their game shows them about items, spells, talents and trainers, and where
+gear comes from (loot windows, quest rewards, vendors) (in GargoyleCollectorDB, one saved file
+per WoW account). Nothing is sent on its own: only the
 Send collected data button sends it (Syncer.send_collected), in batches, to the website,
 which keeps it apart for an admin to look over and merge.
 
@@ -17,9 +18,11 @@ from pathlib import Path
 
 from lua_io import LuaError, read_saved
 
-KINDS = ("items", "spells", "talents", "trainers")
+KINDS = ("items", "spells", "talents", "trainers", "drops", "quests", "vendors")
+SOURCES = ("drops", "quests", "vendors")  # (where gear comes from)
 FILE_ID = re.compile(r"^[0-9a-f]{1,20}$")
 CLASS = re.compile(r"^[A-Z]{2,20}$")
+DROP = re.compile(r"^[1-9][0-9]{0,8}:[1-9][0-9]{0,8}$")  # (a drop: "item id:creature id")
 MAX_BYTES = 20 * 1024 * 1024  # (lua_io's limit too; checked before the file is read in)
 BATCH_BYTES = 160 * 1024  # in one request (the website takes up to 256 KB)
 BATCH_ENTRIES = 400
@@ -34,6 +37,8 @@ def files(game_folder):
 def _key(kind, key):
     if kind == "talents":
         return key if isinstance(key, str) and CLASS.match(key) else None
+    if kind == "drops":
+        return key if isinstance(key, str) and DROP.match(key) else None
     return key if isinstance(key, int) and not isinstance(key, bool) and 0 < key < 10**9 else None
 
 
@@ -82,13 +87,16 @@ def counts(entries_):
 
 
 def describe(numbers):
-    """"12 items, 30 spells and a talent tree" (or "nothing")."""
+    """"12 items, 30 spells, a talent tree and 5 notes on where gear comes from" (or "nothing")."""
     spells = numbers.get("spells", 0) + numbers.get("trainers", 0)
     trees = numbers.get("talents", 0)
+    sources = sum(numbers.get(kind, 0) for kind in SOURCES)
     parts = [f"{n:,} {word}{'s' if n != 1 else ''}" for n, word in ((numbers.get("items", 0), "item"), (spells, "spell"))
              if n]
     if trees:
         parts.append("a talent tree" if trees == 1 else f"{trees} talent trees")
+    if sources:
+        parts.append(f"{sources:,} note{'s' if sources != 1 else ''} on where gear comes from")
     if not parts:
         return "nothing"
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]

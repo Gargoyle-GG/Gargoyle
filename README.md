@@ -42,10 +42,12 @@ site for WoW Forever. Free, like everything on Gargoyle.
   Its data (`Data/<Class>.lua`) is made from the website's spell math. It's turned on or off
   in Gargoyle's options.
 - **The Data Collector** (`addon/Gargoyle_Collector`), only for Gargoyle's helpers, notes what
-  the game shows you about items, spells, talents and trainers, so gargoyle.gg's game data
-  stays up to date. It only reads things you come across (it never runs through item or spell
-  numbers), a few at a time and never in combat, and notes nothing about you or other players
-  but your class. It's installed by the app once a helper types their helper code, and nothing
+  the game shows you about items, spells, talents and trainers, and where gear comes from (the
+  creature whose loot window you open, a quest's rewards and who gives it, a vendor's wares,
+  with the dungeon or zone), so gargoyle.gg's game data stays up to date. It only reads things
+  you come across (it never runs through item or spell numbers), a few at a time and never in
+  combat, and notes nothing about you or other players but your class (a player is never noted
+  as where something came from). It's installed by the app once a helper types their helper code, and nothing
   is sent until they click **Send collected data**. It's turned on or off in Gargoyle's options.
 - **The app** (`helper/`) carries things between the game and the website, because addons
   can't go online. It also installs the addons and keeps them up to date.

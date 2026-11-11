@@ -584,6 +584,41 @@ GetMerchantNumItems = function() return #fake.merchant end
 GetMerchantItemID = function(i) return fake.merchant[i] end
 GetNumLootItems = function() return #fake.loot end
 GetLootSlotLink = function(i) return "|cff1eff00|Hitem:" .. fake.loot[i] .. "::::::::60:::::|h[Loot]|h|r" end
+-- Where gear comes from: who's under your mouse or targeted, or talked to ("npc", "questnpc":
+-- fake.units[unit] = { guid, name, dead, player }), where you are (fake.instance, fake.zone),
+-- a loot window's qualities, and the quest the game shows (fake.quest).
+fake.units, fake.zone = {}, "Elwynn Forest"
+local unitName, unitGUID = UnitName, UnitGUID
+UnitName = function(unit) local u = fake.units[unit]; if u then return u.name, nil end; return unitName(unit) end
+UnitGUID = function(unit) local u = fake.units[unit]; if u then return u.guid end; return unitGUID(unit) end
+UnitExists = function(unit) return unit == "player" or fake.units[unit] ~= nil end
+UnitIsDead = function(unit) return (fake.units[unit] or {}).dead == true end
+UnitIsPlayer = function(unit) return unit == "player" or (fake.units[unit] or {}).player == true end
+GetRealZoneText = function() return fake.zone end
+GetLootSlotInfo = function(i) return 133, "Loot", 1, nil, (fake.items[fake.loot[i]] or {})[2] end
+IsFishingLoot = function() return fake.fishing == true end
+-- Where each loot slot's item came from (guid, count, guid, count...): fake.lootSources[slot]
+-- ("odd": the game errors on that slot).
+fake.lootSources = {}
+GetLootSourceInfo = function(i)
+  local s = fake.lootSources[i]
+  if s == "odd" then error("odd slot") end
+  if s then return unpack(s) end
+end
+C_PlayerInfo = { CanPlayerUseAreaLoot = function() return fake.areaLoot == true end }
+C_Item.GetItemQualityByID = function(id) return (fake.items[id] or {})[2] end
+GetMerchantItemLink = function(i) return "|cff1eff00|Hitem:" .. fake.merchant[i] .. "::::::::60:::::|h[Sold]|h|r" end
+fake.quest = { id = 0, title = "", reward = {}, choice = {} }
+GetQuestID = function() return fake.quest.id end
+GetTitleText = function() return fake.quest.title end
+GetNumQuestRewards = function() return #fake.quest.reward end
+GetNumQuestChoices = function() return #fake.quest.choice end
+GetQuestItemInfo = function(kind, i)
+  local id = fake.quest[kind][i]
+  local it = fake.items[id] or {}
+  return it[1], 133, 1, it[2], true, id
+end
+GetQuestItemLink = function(kind, i) return "|cff1eff00|Hitem:" .. fake.quest[kind][i] .. "::::::::60:::::|h[Reward]|h|r" end
 """
 
 API = {  # what /api/app/sync answers (see app_api.py)
@@ -2716,6 +2751,182 @@ def test_the_talent_tree_is_read_once_the_game_has_loaded_it():
     game.fake.fire("TRAIT_CONFIG_LIST_UPDATED")
     settle(game)
     assert len(collected(game).talents.MAGE.nodes) == 4
+
+
+# Where gear comes from: a boss in the City of Dalaran (instance 2959), a quest giver in
+# Westfall, a vendor; gear, and things that aren't (a bag of potions, a grey, a hearthstone).
+SOURCES = COLLECTOR_ITEMS + """
+fake.items[279847] = { "Unstable Power Core", 3, 7, equip = "INVTYPE_TRINKET" }
+fake.items[279850] = { "Construct Cloak", 2, 8, equip = "INVTYPE_CLOAK" }
+fake.items[4500] = { "Satchel of Potions", 2, 9, equip = "" }
+fake.items[2000] = { "Torn Boots", 0, 10, equip = "INVTYPE_FEET" }
+fake.items[6948].equip = "INVTYPE_NON_EQUIP_IGNORE"
+fake.dalaran = { "City of Dalaran", "party", 1, "Normal", 5, 0, false, 2959 }
+fake.anomaly = { guid = "Creature-0-3110-2959-47-221500-00001A2B3C", name = "Arcane Anomaly", dead = true }
+fake.giver = { guid = "Creature-0-3110-0-12-95001-00004D5E6F", name = "Gryan Stoutmantle" }
+fake.shared = { guid = "Player-1-00FEDCBA", name = "Camelshaman", player = true }
+fake.seller = { guid = "Creature-0-3110-0-12-1250-0000ABCDEF", name = "Drake Lindgren" }"""
+
+
+def source_game(**kw):
+    kw.setdefault("before", SOURCES)
+    game = collector(**kw)
+    settle(game)
+    return game
+
+
+def open_loot(game, items, unit="mouseover", who="anomaly", where="dalaran", *payload, sources=None):
+    """Opens a loot window: `who`'s (under the mouse, or targeted), in `where` (None: where you
+    are). Each item came from `who` (`sources`: what the game says each slot came from instead)."""
+    game.lua.execute(f"fake.loot = {{ {', '.join(map(str, items))} }}; fake.units = {{ {unit} = fake.{who} }}"
+                     + (f"; fake.instance = fake.{where}" if where else "")
+                     + "; fake.lootSources = " + (sources or "{ " + ", ".join(f"{{ fake.{who}.guid, 1 }}" for _ in items) + " }"))
+    game.fake.fire("LOOT_OPENED", *payload)
+
+
+def show_quest(game, event, qid, title, reward=(), choice=(), who="giver", zone="Westfall"):
+    import json
+    game.lua.execute(f"fake.quest = {{ id = {qid}, title = {json.dumps(title)}, reward = {{ {', '.join(map(str, reward))} }}, "
+                     f"choice = {{ {', '.join(map(str, choice))} }} }}; fake.zone = {json.dumps(zone)}; "
+                     f"fake.units = {{ questnpc = fake.{who} }}")
+    game.fake.fire(event)
+
+
+def as_dict(table):
+    return {k: (as_dict(v) if lua51.lua_type(v) == "table" else v) for k, v in table.items()}
+
+
+def test_the_collector_notes_which_boss_dropped_gear():
+    game = source_game()
+    open_loot(game, [279847, 279850, 4500, 2000, 6948])
+    db = collected(game)
+    assert sorted(db.drops.keys()) == ["279847:221500", "279850:221500"]  # (gear only)
+    core = as_dict(db.drops["279847:221500"])
+    assert core == {"item": 279847, "npc": 221500, "name": "Arcane Anomaly", "place": "City of Dalaran",
+                    "instance": 2959, "seen": NOW, "build": 60001}
+    # The same again isn't noted twice; outside a dungeon, the zone is the place.
+    open_loot(game, [279847], unit="target")
+    assert len(list(db.drops.keys())) == 2
+    game.lua.execute('fake.anomaly.guid = "Creature-0-3110-0-12-480-00001A2B3D"; fake.anomaly.name = "Mine Spider"; '
+                     "fake.instance = { 'Elwynn Forest', 'none', 0, '', 5, 0, false, 0 }")
+    open_loot(game, [279850], where=None)
+    spider = as_dict(db.drops["279850:480"])
+    assert (spider["name"], spider["place"], spider.get("instance")) == ("Mine Spider", "Elwynn Forest", None)
+    assert "3 notes on where gear comes from" in GargoyleCollectorSummary(game)
+
+
+SPIDER = "{ guid = 'Creature-0-3110-2959-47-480-00001A2B41', name = 'Mine Spider', dead = true }"
+
+
+def test_each_looted_item_goes_with_its_own_corpse():
+    # Loot gathered from all around at once: the boss under the mouse, and a spider nearby.
+    game = source_game(before=SOURCES + "; fake.areaLoot = true; fake.spider = " + SPIDER)
+    open_loot(game, [279847, 279850, 279850], sources="{ { fake.anomaly.guid, 1 }, { fake.spider.guid, 1 }, 'odd' }")
+    assert list(collected(game).drops.keys()) == ["279847:221500"]  # (the spider isn't the one you clicked)
+    # Targeted too, it's noted with its own name.
+    game.lua.execute("fake.units.target = fake.spider; fake.lootSources = { 'odd', { fake.spider.guid, 1 } }")
+    game.fake.fire("LOOT_OPENED")
+    assert collected(game).drops["279850:480"].name == "Mine Spider"
+    # A slot from two corpses at once, or one the game hides, isn't noted.
+    open_loot(game, [240056], sources="{ { fake.anomaly.guid, 1, fake.spider.guid, 1 } }")
+    game.lua.execute("issecretvalue = function(v) return v == fake.anomaly.guid end")
+    open_loot(game, [240052])
+    game.lua.execute("issecretvalue = function(v) return v == 7 end")
+    open_loot(game, [234571], sources="{ { fake.anomaly.guid, 7 } }")
+    game.lua.execute("issecretvalue = function() return false end")
+    open_loot(game, [234571], sources="{ { 'GameObject-0-3110-2959-47-180000-00001A2B42', 1 } }")  # (a chest)
+    assert sorted(collected(game).drops.keys()) == ["279847:221500", "279850:480"]
+    open_loot(game, [240052])
+    assert "240052:221500" in list(collected(game).drops.keys())
+    saved = lua_table(game, collected(game))
+    assert "Creature-" not in saved and "GameObject-" not in saved
+
+
+def test_without_the_games_loot_sources_one_corpse_must_be_certain():
+    game = source_game(before=SOURCES + "; GetLootSourceInfo = nil")
+    open_loot(game, [279847], who="giver")  # (alive: not a corpse you're looting)
+    open_loot(game, [279847], who="shared")  # (a player)
+    open_loot(game, [279847], "mouseover", "anomaly", "dalaran", False, True)  # (from an item in your bags)
+    game.lua.execute("fake.fishing = true")
+    open_loot(game, [279847])
+    game.lua.execute("fake.fishing, fake.areaLoot = false, true")  # (loot gathered from all around at once)
+    open_loot(game, [279847])
+    game.lua.execute("fake.areaLoot = false")
+    # Two different corpses (under the mouse and targeted): which one is it?
+    game.lua.execute("fake.loot = { 279847 }; fake.instance = fake.dalaran; fake.units = { mouseover = fake.anomaly, "
+                     "target = { guid = 'Creature-0-3110-2959-47-221501-00001A2B40', name = 'Fel Ancient', dead = true } }")
+    game.fake.fire("LOOT_OPENED")
+    game.lua.execute("fake.combat = true")  # (never in combat)
+    open_loot(game, [279847])
+    game.lua.execute("fake.combat = false; issecretvalue = function(v) return v == fake.anomaly.guid end")  # (hidden by the game)
+    open_loot(game, [279847])
+    assert list(collected(game).drops.keys()) == []
+    game.lua.execute("issecretvalue = function() return false end")
+    open_loot(game, [279847])
+    assert list(collected(game).drops.keys()) == ["279847:221500"]
+
+
+def test_the_collector_notes_quest_rewards_and_who_gives_and_takes_them():
+    game = source_game()
+    show_quest(game, "QUEST_DETAIL", 95250, "Power in the Core", reward=[279847, 4500], choice=[279850, 2000])
+    quest = as_dict(collected(game).quests[95250])
+    assert quest == {"title": "Power in the Core", "rewards": {1: 279847}, "choices": {1: 279850},
+                     "giver": {"npc": 95001, "name": "Gryan Stoutmantle", "place": "Westfall"}, "seen": NOW, "build": 60001}
+    # Handed in somewhere else: both halves, noted once each.
+    game.lua.execute('fake.giver.name, fake.giver.guid = "Captain Danuvin", "Creature-0-3110-0-12-95002-00004D5E70"')
+    show_quest(game, "QUEST_COMPLETE", 95250, "Power in the Core", reward=[279847, 4500], choice=[279850, 2000], zone="Redridge Mountains")
+    quest = as_dict(collected(game).quests[95250])
+    assert quest["taker"] == {"npc": 95002, "name": "Captain Danuvin", "place": "Redridge Mountains"}
+    assert quest["giver"]["name"] == "Gryan Stoutmantle"
+    sums = collected(game).sums.quests[95250]
+    show_quest(game, "QUEST_COMPLETE", 95250, "Power in the Core", reward=[279847], choice=[279850], zone="Redridge Mountains")
+    assert collected(game).sums.quests[95250] == sums
+    # A quest with no gear isn't noted, nor one in combat; one a party member shares is noted
+    # without them, as is one whose giver the game hides.
+    show_quest(game, "QUEST_DETAIL", 95251, "Potions for All", reward=[4500])
+    show_quest(game, "QUEST_DETAIL", 95252, "A Shared Quest", reward=[279850], who="shared")
+    assert sorted(collected(game).quests.keys()) == [95250, 95252]
+    assert collected(game).quests[95252].giver is None
+    game.lua.execute("fake.combat = true")
+    show_quest(game, "QUEST_DETAIL", 95253, "In a Fight", reward=[279850])
+    game.lua.execute("fake.combat = false; issecretvalue = function(v) return v == fake.giver.guid end")
+    show_quest(game, "QUEST_DETAIL", 95254, "Hidden Giver", reward=[279850])
+    assert sorted(collected(game).quests.keys()) == [95250, 95252, 95254] and collected(game).quests[95254].giver is None
+
+
+def test_the_collector_notes_the_gear_a_vendor_sells():
+    game = source_game()
+    game.lua.execute("fake.merchant = { 5187, 4500, 279850, 5187, 6948 }; fake.units = { npc = fake.seller }")
+    game.fake.fire("MERCHANT_SHOW")
+    settle(game)
+    seller = as_dict(collected(game).vendors[1250])
+    assert seller == {"name": "Drake Lindgren", "place": "Elwynn Forest", "items": {1: 5187, 2: 279850}, "seen": NOW, "build": 60001}
+    game.lua.execute("fake.units = { npc = fake.shared }")  # (never a player)
+    game.fake.fire("MERCHANT_SHOW")
+    settle(game)
+    assert list(collected(game).vendors.keys()) == [1250]
+
+
+def test_where_gear_comes_from_names_no_player_and_is_cleared_once_sent():
+    game = source_game()
+    open_loot(game, [279847])
+    show_quest(game, "QUEST_DETAIL", 95250, "Power in the Core", reward=[279847])
+    show_quest(game, "QUEST_DETAIL", 95252, "A Shared Quest", reward=[279850], who="shared")
+    game.lua.execute("fake.merchant = { 5187 }; fake.units = { npc = fake.seller }")
+    game.fake.fire("MERCHANT_SHOW")
+    settle(game)
+    db = collected(game)
+    saved = lua_table(game, db)
+    assert "Jainamage" not in saved and "Camelshaman" not in saved and "Player-" not in saved and "Creature-" not in saved
+    assert GargoyleCollectorSummary(game).endswith("4 notes on where gear comes from waiting to be sent with the Gargoyle app's Send collected data button.")
+    sync = 'GargoyleSync = { version = 1, collected = { ["%s"] = %d } }' % (db.id, NOW)
+    game = collector(saved="GargoyleCollectorDB = " + saved + "\n" + sync, now=NOW + 100, before=SOURCES)
+    settle(game)
+    db = collected(game)
+    assert [list(db[k].keys()) for k in ("drops", "quests", "vendors")] == [[], [], []]
+    open_loot(game, [279847])  # (seen again: not noted again)
+    show_quest(game, "QUEST_DETAIL", 95250, "Power in the Core", reward=[279847])
+    assert [list(db[k].keys()) for k in ("drops", "quests")] == [[], []]
 
 
 # ---- The core and its module addons; the wishlist (addon/Gargoyle/Upgrades.lua) ----

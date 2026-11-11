@@ -460,8 +460,8 @@ function ns.CreateOptions()
   if collector then
     ns.collectorText = page:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     ns.collectorText:SetText(collector.Summary())
-    ns.collectorBox = option("Collect item, spell and talent data for Gargoyle (I'm a helper)", collector.On,
-      collector.SetOn, ns.collectorText)
+    ns.collectorBox = option(type(collector.Label) == "string" and collector.Label
+      or "Collect item, spell and talent data for Gargoyle (I'm a helper)", collector.On, collector.SetOn, ns.collectorText)
   end
 
   -- Camera (Camera.lua): sliders for the sideways and up settings, and a Reset button. The sliders

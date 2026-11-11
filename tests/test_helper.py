@@ -1436,6 +1436,17 @@ def test_collected_data_from_saved_files():
     assert collected.describe(collected.counts(found)) == "1 item, 1 spell and a talent tree"
     assert collected.describe({"items": 1200, "trainers": 2}) == "1,200 items and 2 spells"
     assert collected.describe({}) == "nothing"
+    # Where gear comes from: drops ("item:creature"), quests and vendors (by id).
+    saved = {"GargoyleCollectorDB": {"v": 1, "id": "ab12", "drops": {"279847:221500": {"item": 279847, "seen": 12},
+                                                                     "279847": {"seen": 12}, "x:1": {"seen": 12}},
+                                     "quests": {95250: {"title": "Power in the Core", "rewards": [279847], "seen": 13},
+                                                "95250": {"seen": 13}},
+                                     "vendors": {1250: {"name": "Drake Lindgren", "items": [5187], "seen": 14}}}}
+    file_id, found = collected.entries(saved)
+    assert [(e["kind"], e["key"]) for e in found] == [("drops", "279847:221500"), ("quests", 95250), ("vendors", 1250)]
+    assert found[1]["data"] == {"title": "Power in the Core", "rewards": [279847]}
+    assert collected.describe(collected.counts(found)) == "3 notes on where gear comes from"
+    assert collected.describe({"items": 2, "drops": 1}) == "2 items and 1 note on where gear comes from"
     big = [{"kind": "items", "key": i, "build": 1, "seen": 1, "data": {"name": "x" * 1000}} for i in range(1, 400)]
     sizes = [len(b) for b in collected.batches(big)]
     assert sum(sizes) == 399 and max(sizes) < 400 and len(sizes) > 2
@@ -1446,8 +1457,11 @@ def test_collected_data_from_saved_files():
 def test_a_helper_sends_what_the_collector_noted_and_it_clears(tmp_path, game_folder):
     """The whole trip: the collector addon notes things in game, the game saves them, the
     helper clicks Send, the website gets them, and the addon clears them at the next login."""
-    from test_addon import NOW, collector as collector_game, settle
-    game = collector_game()
+    from test_addon import NOW, SOURCES, collector as collector_game, open_loot, settle, show_quest
+    game = collector_game(before=SOURCES)
+    settle(game)
+    open_loot(game, [279847])  # (and where gear comes from: a boss's loot, a quest's rewards)
+    show_quest(game, "QUEST_DETAIL", 95250, "Power in the Core", reward=[279847])
     settle(game)
     game.lua.execute(SERIALIZE)
     saved_text = "GargoyleCollectorDB = " + game.lua.eval("serialize(GargoyleCollectorDB)") + "\n"
@@ -1485,13 +1499,19 @@ def test_a_helper_sends_what_the_collector_noted_and_it_clears(tmp_path, game_fo
     helper["on"] = True
     syncer.run()
     assert config.get("helper") is True and [c[0] for c in calls] == ["sync", "sync"]  # (a sync sends none of it)
-    assert syncer.collected_waiting() == {"items": 3, "spells": 6, "talents": 1, "trainers": 0}
-    assert syncer.send_collected() == "Sent 10 entries: 10 new to the website, 0 it had already."
+    assert syncer.collected_waiting() == {"items": 4, "spells": 6, "talents": 1, "trainers": 0, "drops": 1, "quests": 1,
+                                          "vendors": 0}
+    assert syncer.send_collected() == "Sent 13 entries: 13 new to the website, 0 it had already."
     sent = [e for name, body in calls if name == "collected" for e in body["entries"]]
-    assert sorted({e["kind"] for e in sent}) == ["items", "spells", "talents"] and len(sent) == 10
+    assert sorted({e["kind"] for e in sent}) == ["drops", "items", "quests", "spells", "talents"] and len(sent) == 13
+    drop = next(e for e in sent if e["kind"] == "drops")
+    assert drop["key"] == "279847:221500" and drop["data"] == {"item": 279847, "npc": 221500, "name": "Arcane Anomaly",
+                                                               "place": "City of Dalaran", "instance": 2959}
+    quest = next(e for e in sent if e["kind"] == "quests")
+    assert quest["key"] == 95250 and quest["data"]["rewards"] == [279847] and quest["data"]["giver"]["npc"] == 95001
     assert all(set(e) == {"kind", "key", "build", "data"} and "seen" not in e["data"] for e in sent)
     assert config.get("collected") == {file_id: NOW}
-    assert syncer.collected_waiting() == {"items": 0, "spells": 0, "talents": 0, "trainers": 0}
+    assert set(syncer.collected_waiting().values()) == {0}
     assert syncer.send_collected() == "Nothing new to send."
     # The next sync tells the addon, which clears what was sent at the next login.
     syncer.run()
@@ -1501,6 +1521,7 @@ def test_a_helper_sends_what_the_collector_noted_and_it_clears(tmp_path, game_fo
     settle(game)
     db = game.lua.globals().GargoyleCollectorDB
     assert list(db["items"].keys()) == [] and list(db.spells.keys()) == [] and db.talents.MAGE is None
+    assert list(db.drops.keys()) == [] and list(db.quests.keys()) == []
 
 
 def test_a_helper_code_in_the_app(tmp_path, game_folder):

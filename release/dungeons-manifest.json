@@ -1,10 +1,10 @@
 {
  "files": {
-  "Gargoyle_Dungeons/Data/Journal.lua": "6f7bf5c98906f4823e5456a2bfd9fac014ad9d473eabd80246ad8dda519ce171",
-  "Gargoyle_Dungeons/Gargoyle_Dungeons.toc": "3209b330bd267cad8203ba3a1f862ee7117ce0214450aff2e7345544b704329b",
+  "Gargoyle_Dungeons/Data/Journal.lua": "7a623b6b57f81a8c5a5ada1d0f0c8e2919ae21d3a621d2d82767e9d0989f3d30",
+  "Gargoyle_Dungeons/Gargoyle_Dungeons.toc": "a3af789f68e47c06ec2e7c864c197b88bd1dbe85025fa0cb52e6fd8d5dfaf8b4",
   "Gargoyle_Dungeons/Journal.lua": "e6ac8baaa1391bdb9c96c1d3b33b5f79fd04dada6968ec1a23ecc4728e038d9d",
   "Gargoyle_Dungeons/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
  },
- "tag": "v1.9.3-addon1.0.4-tips1.0.6-col1.0.3-dun1.1.0-loot1.0.4-fish1.0.0",
- "version": "1.1.0"
+ "tag": "v1.9.4-addon1.0.5-tips1.0.6-col1.1.0-dun1.1.1-loot1.0.5-fish1.0.0",
+ "version": "1.1.1"
 }

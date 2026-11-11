@@ -10,8 +10,15 @@
 --   Talents: your class's whole talent tree: every talent with each rank's text, where it
 --     sits, and what it needs. (The game is asked to load each talent's text first, as its
 --     own talent window does before showing a talent.)
+--   Where gear comes from (weapons and armour, uncommon or better):
+--     - a creature's loot, when you open its loot window: the gear in it, the creature (its
+--       id and name) and the place (the dungeon or raid, or else the zone).
+--     - a quest's rewards, when the game shows them (offered or handed in): the quest's id and
+--       title, the gear it rewards or lets you choose, and who gives or takes it, and where.
+--     - a vendor, while you have its window open: the gear it sells, who it is and where.
 -- Nothing about you or other players is noted but your class (for its talents and spells):
 -- where your hearthstone goes, which the game puts in some texts, is noted as "your home location".
+-- (A player is never noted as a loot's or quest's source: only the game's own creatures.)
 --
 -- Kept light and polite: it only reads what the game has already shown you or is loading to
 -- show you (it never runs through item or spell numbers, which would make the game ask the
@@ -29,9 +36,10 @@ local ADDON = ...
 GargoyleCollector = {}
 local C = GargoyleCollector
 
-local KINDS = { "items", "spells", "talents", "trainers" }
+local KINDS = { "items", "spells", "talents", "trainers", "drops", "quests", "vendors" }
 -- How much it keeps before it's sent (each kind): beyond this it waits for the app to send it.
-local LIMITS = { items = 4000, spells = 3000, talents = 20, trainers = 2000 }
+local LIMITS = { items = 4000, spells = 3000, talents = 20, trainers = 2000, drops = 3000, quests = 2000, vendors = 500 }
+local MAX_SOLD = 200 -- gear noted from one vendor
 local MAX_QUEUE = 400 -- things waiting to be read (more are picked up when seen again)
 local MAX_LOADING = 20 -- items being loaded by the game at once
 local PER_STEP = 6 -- things read per step...
@@ -625,15 +633,196 @@ local function everything()
   talents()
 end
 
+-- ---- Where gear comes from ----
+-- Only from windows you opened yourself (a loot window, a quest, a vendor), never in combat,
+-- and only the game's own creatures: never a player (a quest a party member shares names no one).
+
+local function fighting()
+  return InCombatLockdown and InCombatLockdown()
+end
+
+-- Gear as the website lists it (something you wear, uncommon or better): its id, or nil.
+-- From what the game knows of the item without asking the server about it.
+local NOT_WORN = { INVTYPE_NON_EQUIP_IGNORE = true, INVTYPE_BAG = true, INVTYPE_AMMO = true, INVTYPE_QUIVER = true }
+local function gear(id, quality)
+  id = number(id)
+  local instant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+  if not id or id <= 0 or id ~= math.floor(id) or not instant then return nil end
+  local ok, _, _, _, slot = pcall(instant, id)
+  slot = ok and text(slot, 40)
+  if not slot or not slot:find("^INVTYPE_") or NOT_WORN[slot] then return nil end
+  quality = number(quality)
+  if not quality and C_Item and C_Item.GetItemQualityByID then
+    local known, q = pcall(C_Item.GetItemQualityByID, id)
+    quality = known and number(q)
+  end
+  return quality and quality >= 2 and id or nil
+end
+
+-- Where you are: a dungeon or raid (its name and the game's id for it), or else the zone.
+local function place()
+  local name, kind, _, _, _, _, _, id = GetInstanceInfo()
+  if type(kind) == "string" and not secret(kind) and (kind == "party" or kind == "raid") and number(id) then
+    return text(name, 100), id
+  end
+  return text(GetRealZoneText and GetRealZoneText(), 100), nil
+end
+
+-- One of the game's creatures or objects (its id and name), from a unit; never a player, or
+-- anyone's pet. Nil when the game hides who it is.
+local function npcOf(unit)
+  local exists, player = UnitExists and UnitExists(unit), UnitIsPlayer and UnitIsPlayer(unit)
+  if secret(exists) or not exists or secret(player) or player then return nil end
+  local guid = UnitGUID and UnitGUID(unit)
+  if type(guid) ~= "string" or secret(guid) then return nil end
+  local kind, id = guid:match("^(%a+)%-%d+%-%d+%-%d+%-%d+%-(%d+)%-")
+  id = tonumber(id)
+  local name = text(UnitName(unit), 100)
+  if not (id and name) or (kind ~= "Creature" and kind ~= "GameObject") then return nil end
+  return { [kind == "Creature" and "npc" or "object"] = id, name = name }, guid
+end
+
+-- The dead creature with this GUID, if it's the one under your mouse, targeted or talked to
+-- right now (that's where its name comes from: nothing is remembered).
+local function deadNPC(guid)
+  for _, unit in ipairs({ "mouseover", "target", "npc" }) do
+    local dead = UnitIsDead and UnitIsDead(unit)
+    if not secret(dead) and dead == true then
+      local npc, unitGUID = npcOf(unit)
+      if npc and npc.npc and unitGUID == guid then return npc end
+    end
+  end
+end
+
+-- Who dropped one loot slot's item, from the game's own list of where each slot's loot came
+-- from (GetLootSourceInfo: guid, count, guid, count...): its one source, when that's a
+-- creature you can see dead right now. Nil when there are more, or the game hides them. (So
+-- with loot gathered from all around at once, each item goes with its own corpse, and only
+-- the corpse you clicked or targeted is noted.)
+local function slotSource(slot)
+  local function pack(...) return select("#", ...), { ... } end
+  local n, sources = pack(GetLootSourceInfo(slot))
+  local guid
+  for i = 1, n do
+    if secret(sources[i]) then return nil end
+  end
+  for i = 1, n, 2 do
+    if type(sources[i]) == "string" then
+      if guid then return nil end -- (two or more: which one?)
+      guid = sources[i]
+    end
+  end
+  if not guid or not guid:find("^Creature%-") then return nil end
+  return deadNPC(guid)
+end
+
+-- Without the game's list of loot sources: the dead creature under your mouse or targeted.
+-- Nil unless that's certain (two different ones, or loot that can come from all around at once).
+local function lootedFrom()
+  if C_PlayerInfo and C_PlayerInfo.CanPlayerUseAreaLoot and C_PlayerInfo.CanPlayerUseAreaLoot() then return nil end
+  local found, foundGUID
+  for _, unit in ipairs({ "mouseover", "target" }) do
+    local dead = UnitIsDead and UnitIsDead(unit)
+    if not secret(dead) and dead == true then
+      local npc, guid = npcOf(unit)
+      if npc and npc.npc then
+        if found and guid ~= foundGUID then return nil end
+        found, foundGUID = npc, guid
+      end
+    end
+  end
+  return found
+end
+
+-- A loot window: each piece of gear in it, with who dropped it and where (once each).
+local function drops(_, fromItem)
+  if fromItem or fighting() or (IsFishingLoot and IsFishingLoot()) or not GetNumLootItems then return end
+  local everyone -- (without GetLootSourceInfo: one creature for the whole window, or nothing)
+  if not GetLootSourceInfo then
+    everyone = lootedFrom()
+    if not everyone then return end
+  end
+  local where, instance = place()
+  for i = 1, number(GetNumLootItems()) or 0 do
+    pcall(function() -- (an odd slot only skips that slot)
+      local quality
+      if GetLootSlotInfo then quality = select(5, GetLootSlotInfo(i)) end
+      local id = gear(itemID(GetLootSlotLink and GetLootSlotLink(i)), quality)
+      local npc = id and (everyone or slotSource(i))
+      local key = npc and id .. ":" .. npc.npc
+      if key and not db.checked.drops[key] then
+        record("drops", key, { item = id, npc = npc.npc, name = npc.name, place = where, instance = instance })
+      end
+    end)
+  end
+end
+
+local function questGear(kind, count)
+  local ids = {}
+  for i = 1, math.min(number(count) or 0, 10) do
+    local _, _, _, quality, _, id = GetQuestItemInfo(kind, i)
+    id = gear(number(id) or itemID(GetQuestItemLink and GetQuestItemLink(kind, i)), quality)
+    if id then ids[#ids + 1] = id end
+  end
+  table.sort(ids)
+  return #ids > 0 and ids or nil
+end
+
+-- A quest the game shows you, offered ("giver") or being handed in ("taker"): its gear, and
+-- who gives or takes it, and where. Only quests with gear.
+local function quest(part)
+  if fighting() or not (GetQuestID and GetTitleText and GetQuestItemInfo) then return end
+  local id, title = number(GetQuestID()), text(GetTitleText(), 200)
+  if not id or id <= 0 or not title then return end
+  local rewards = questGear("reward", GetNumQuestRewards and GetNumQuestRewards())
+  local choices = questGear("choice", GetNumQuestChoices and GetNumQuestChoices())
+  if not (rewards or choices) then return end
+  local who = npcOf("questnpc")
+  if who then who.place, who.instance = place() end
+  -- (each half once: what was offered, and what was handed in)
+  local mark, half = part .. id, checksum({ title, rewards or 0, choices or 0, who or 0 })
+  if db.sums.quests[mark] == half then return end
+  local entry = {}
+  for k, v in pairs(db.quests[id] or {}) do entry[k] = v end -- (the other half, if it's not sent yet)
+  entry.title, entry.rewards, entry.choices, entry[part] = title, rewards, choices, who or entry[part]
+  if record("quests", id, entry) then db.sums.quests[mark] = half end
+end
+
+-- A vendor's window: the gear it sells, who it is and where.
+local function vendor()
+  if fighting() or not GetMerchantNumItems then return end
+  local who = npcOf("npc")
+  if not (who and who.npc) then return end
+  local ids, have = {}, {}
+  for i = 1, number(GetMerchantNumItems()) or 0 do
+    if #ids == MAX_SOLD then break end
+    local id = gear((GetMerchantItemID and GetMerchantItemID(i)) or itemID(GetMerchantItemLink and GetMerchantItemLink(i)))
+    if id and not have[id] then have[id], ids[#ids + 1] = true, id end
+  end
+  if #ids == 0 then return end
+  table.sort(ids)
+  local where, instance = place()
+  record("vendors", who.npc, { name = who.name, place = where, instance = instance, items = ids })
+end
+
 local EVENTS = {
   PLAYER_EQUIPMENT_CHANGED = function() soon("equipped", 2, equipped) end,
   BAG_UPDATE_DELAYED = function() soon("carried", 2, carried) end,
   BANKFRAME_OPENED = function() soon("bank", 1, bank) end,
-  MERCHANT_SHOW = function() soon("merchant", 0.5, merchant) end,
-  MERCHANT_UPDATE = function() soon("merchant", 0.5, merchant) end,
-  LOOT_OPENED = loot, -- (straight away: the window can be gone in a moment)
-  QUEST_DETAIL = questRewards,
-  QUEST_COMPLETE = questRewards,
+  MERCHANT_SHOW = function() soon("merchant", 0.5, function() merchant(); vendor() end) end,
+  MERCHANT_UPDATE = function() soon("merchant", 0.5, function() merchant(); vendor() end) end,
+  LOOT_OPENED = function(...) -- (straight away: the window can be gone in a moment)
+    loot()
+    pcall(drops, ...)
+  end,
+  QUEST_DETAIL = function()
+    questRewards()
+    pcall(quest, "giver")
+  end,
+  QUEST_COMPLETE = function()
+    questRewards()
+    pcall(quest, "taker")
+  end,
   TRAINER_SHOW = function() soon("trainer", 0.5, trainer) end,
   TRAINER_UPDATE = function() soon("trainer", 0.5, trainer) end,
   SPELLS_CHANGED = function() soon("spellbook", 5, spellbook) end,
@@ -671,6 +860,8 @@ function C.Summary()
   local spells = counts.spells + counts.trainers
   if spells > 0 then parts[#parts + 1] = spells .. (spells == 1 and " spell" or " spells") end
   if counts.talents > 0 then parts[#parts + 1] = "a talent tree" end
+  local sources = counts.drops + counts.quests + counts.vendors
+  if sources > 0 then parts[#parts + 1] = sources .. (sources == 1 and " note" or " notes") .. " on where gear comes from" end
   if #parts == 0 then return "Nothing new to send yet." end
   local waiting = table.concat(parts, ", ") .. " waiting to be sent with the Gargoyle app's Send collected data button."
   if C.full then return "Full: " .. waiting .. " Then /reload, and it carries on." end
@@ -678,8 +869,12 @@ function C.Summary()
 end
 
 function C.Counts()
-  return counts.items or 0, counts.spells or 0, counts.talents or 0, counts.trainers or 0
+  return counts.items or 0, counts.spells or 0, counts.talents or 0, counts.trainers or 0,
+    (counts.drops or 0) + (counts.quests or 0) + (counts.vendors or 0)
 end
+
+-- What its switch in Gargoyle's options says.
+C.Label = "Collect item, spell and talent data, and where gear comes from, for Gargoyle (I'm a helper)"
 
 -- Items and spells under your mouse (from the game's tooltip data, so it's what the game has).
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
@@ -693,12 +888,12 @@ end
 
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
-events:SetScript("OnEvent", function(_, event, name)
+events:SetScript("OnEvent", function(_, event, ...)
   if event == "ADDON_LOADED" then
-    if name == ADDON then loadDB() end
+    if ... == ADDON then loadDB() end
   elseif event == "PLAYER_LOGIN" then
     if db and C.On() then start() end
   elseif EVENTS[event] and db and C.On() then
-    EVENTS[event]()
+    EVENTS[event](...)
   end
 end)

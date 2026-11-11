@@ -428,8 +428,8 @@ class App:
             "fishing": "Cast Fishing with one key (set it in Key Bindings > Gargoyle), and press it again to reel "
                        "in (or right-click the bobber). A louder splash while you fish helps you hear the bite.",
             "tooltips": "A breakdown of your spells' damage and healing on their tooltips.",
-            "collector": "For Gargoyle's helpers: notes the items, spells and talents your game shows you. It's "
-                         "installed while your account is a helper.",
+            "collector": "For Gargoyle's helpers: notes the items, spells and talents your game shows you, and where "
+                         "gear comes from (loot, quest rewards, vendors). It's installed while your account is a helper.",
         }
         self.optional_on, self.addon_rows = {}, {}
         self.always_on = tk.BooleanVar(value=True)  # (Gargoyle itself, and a helper's Data Collector: no untick)
@@ -640,7 +640,8 @@ class App:
             waiting = collected.describe(counts) if counts is not None else None
             self.collector_text.configure(text=(
                 "Thank you for helping! In game, the Data Collector notes the items, spells and talents your game shows "
-                "you (turn it on or off in Gargoyle's options). Nothing is sent until you click Send collected data. "
+                "you, and where gear comes from: the creature whose loot you open, the quest that rewards it, the vendor "
+                "that sells it (turn it on or off in Gargoyle's options). Nothing is sent until you click Send collected data. "
                 + ("Sending…" if self.sending else f"Waiting to send: {waiting}." if waiting else
                    "What's waiting shows here after the next sync.")
                 + ("" if gatherer else " The addon installs with the next update check.")))
