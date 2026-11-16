@@ -2467,10 +2467,11 @@ def test_the_real_journal_data_loads_and_scrolls():
         grouped = group_quests(next(p for p in data["places"] if p["name"] == "Gnomeregan")["quests"])
         assert len(entries) == len(grouped)
         assert sum(len(e.steps) for e in entries) == sum(len(e["steps"]) for e in grouped)
-    # (the three Sparklematic 5200s: one step, done when any copy is)
+    # (the three Sparklematic 5200s: one step, done when any copy is; since 2026-11-15 the source
+    # also lists the repeatable "More Sparklematic Action" after each copy: one step after it)
     sparkle = next(e for e in entries if e.title == "The Sparklematic 5200!")
-    assert len(sparkle.steps) == 1 and sorted([sparkle.steps[1].id, *sparkle.steps[1].also.values()]) == [
-        2951, 2952, 4601, 4602, 4605, 4606]
+    assert sorted([sparkle.steps[1].id, *sparkle.steps[1].also.values()]) == [2951, 2952, 4601, 4602, 4605, 4606]
+    assert [s.title for n, s in sorted(sparkle.steps.items())][1:] in ([], ["More Sparklematic Action"])
     rig = next(e for e in entries if e.title == "Rig Wars")
     assert [s.title for s in rig.steps.values()] == ["Rig Wars", "Chief Engineer Scooty", "Gnomer-gooooone!"] and rig.steps[1].last
     journal.PickPlace(places.index(gnomeregan) + 1)

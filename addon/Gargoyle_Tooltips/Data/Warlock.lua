@@ -90,7 +90,7 @@ ns.data.WARLOCK = {
     [1293813] = { name = "Incinerate", rank = 3, cast = 2.5, parts = { { kind = "damage", school = "Fire", min = 201, max = 233, coeff = 0.714, crit = true, scopes = { "Destruction spells" } } } },
     [1293817] = { name = "Conflagrate", rank = 1, cast = 0, parts = { { kind = "damage", school = "Fire", min = 88, max = 111, coeff = 0.429, crit = true, scopes = { "Conflagrate", "Destruction spells" } } } },
     [1293818] = { name = "Conflagrate", rank = 2, cast = 0, parts = { { kind = "damage", school = "Fire", min = 113, max = 142, coeff = 0.429, crit = true, scopes = { "Conflagrate", "Destruction spells" } } } },
-    [1316697] = { name = "Wrack", rank = 1, cast = 6, channeled = true, parts = { { kind = "damage", school = "Shadow", periodic = true, duration = 6, min = 516, max = 516, ticks = 6, coeff = 1.716, crit = true, scopes = { "Corruption, Banes, Drains, Siphon Life and Wrack", "Shadow damage", "Shadow spells" } } } },
+    [1316697] = { name = "Wrack", rank = 1, cast = 6, channeled = true, parts = { { kind = "damage", school = "Shadow", periodic = true, duration = 6, min = 361.2, max = 361.2, ticks = 6, coeff = 1.2, crit = true, scopes = { "Corruption, Banes, Drains, Siphon Life and Wrack", "Shadow damage", "Shadow spells" } } } },
   },
   talents = {
     { name = "Aftermath", spells = { 18119 }, effects = { { stat = "damage", values = { 10, 20, 30, 40, 50 }, scope = "Immolate (initial damage)" } } },
