@@ -1,8 +1,8 @@
 {
  "file": "GargoyleSetup.exe",
  "kind": "app",
- "sha256": "bfab9c1d8bb86d9c46b1566f1985600406f5e3970e142e555f5db35440937b3d",
- "size": 19657751,
- "tag": "v1.9.4-addon1.0.5-tips1.0.6-col1.1.0-dun1.1.1-loot1.0.5-fish1.0.0",
+ "sha256": "a27c5f04ed66f2f75401705aea86b1966e6e6db20f1bf1afe7da3011dee1b606",
+ "size": 19653071,
+ "tag": "v1.9.4-addon1.0.5-tips1.0.7-col1.1.0-dun1.1.2-loot1.0.6-fish1.0.0",
  "version": "1.9.4"
 }
