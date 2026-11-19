@@ -104,22 +104,52 @@ local function fromTemplate(w, template)
     self:SetVerticalScroll(math.min(self:GetVerticalScrollRange(), math.max(0, self:GetVerticalScroll() - delta * 30)))
   end
 end
--- Dropdowns (the game's DropdownButton): a menu of radio choices, made by a function. The
--- text shown is the chosen one's.
+-- Dropdowns (the game's DropdownButton, Blizzard_Menu): a menu made by a function, of radio
+-- choices, titles, dividers and buttons that open a menu of their own (submenus). w.menu is the
+-- menu made, w.radios every radio in it and its submenus. The text shown is the chosen ones'
+-- (as the game's DropdownSelectionTextMixin: each chosen one, joined by ", "), or what
+-- SetSelectionText's function gives. SetScrollMode(height): a menu that scrolls past it.
 local function showChoice(w)
-  w.text = w.defaultText or ""
+  local chosen, texts = {}, {}
   for _, r in ipairs(w.radios) do
-    if r.isSelected(r.data) then w.text = r.text end
+    if r.isSelected(r.data) then
+      chosen[#chosen + 1] = r
+      texts[#texts + 1] = r.text
+    end
   end
+  local text = w.selectionFunc and w.selectionFunc(chosen)
+  if text == nil and #texts > 0 then text = table.concat(texts, ", ") end
+  w.text = text or w.defaultText or ""
+end
+local function menuDescription(w, kind, text)
+  local d = { kind = kind, text = text, items = {} }
+  function d:CreateRadio(text, isSelected, setSelected, data)
+    local r = { kind = "radio", text = text, isSelected = isSelected, setSelected = setSelected, data = data }
+    table.insert(self.items, r)
+    table.insert(w.radios, r)
+    return r
+  end
+  function d:CreateButton(text, callback, data)
+    local b = menuDescription(w, "button", text)
+    b.callback, b.data = callback, data
+    table.insert(self.items, b)
+    return b
+  end
+  function d:CreateTitle(text) table.insert(self.items, { kind = "title", text = text }) end
+  function d:CreateDivider() table.insert(self.items, { kind = "divider" }) end
+  function d:SetScrollMode(height)
+    assert(type(height) == "number", "SetScrollMode needs a number")
+    self.scroll = height
+  end
+  return d
 end
 function methods:SetDefaultText(text) self.defaultText = text end
+function methods:SetSelectionText(fn) self.selectionFunc = fn end
 function methods:SetupMenu(generator) self.generator = generator; self:GenerateMenu() end
 function methods:GenerateMenu()
   self.radios = {}
-  local root = { CreateRadio = function(_, text, isSelected, setSelected, data)
-    table.insert(self.radios, { text = text, isSelected = isSelected, setSelected = setSelected, data = data })
-  end }
-  self.generator(self, root)
+  self.menu = menuDescription(self, "root")
+  self.generator(self, self.menu)
   showChoice(self)
 end
 function fake.choose(text) -- open the dropdown that offers it, and pick it

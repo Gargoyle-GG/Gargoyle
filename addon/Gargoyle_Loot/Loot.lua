@@ -2,16 +2,17 @@
 -- on the website's Loot pages. An addon of its own that needs Gargoyle (the core), which it uses
 -- through the Gargoyle table.
 --
--- On the left, where items come from: everything, your wishlist, dungeons, raids, merchants and
--- reputation, professions, and item sets. Each group shows all its items, and opens a list of
--- its places (or professions, factions, sets) to pick just one. Above the list, a search within
+-- Along the top, dropdowns pick where items come from, left to right: the group (everything,
+-- your wishlist, dungeons, raids, merchants and reputation, professions, item sets); then, for a
+-- group with a list, all of it or just one (a dungeon, a faction, a profession, a set: sets by
+-- class); then, in one dungeon or raid, all its bosses or one. Below them, a search within
 -- what's picked, and filters: slot, type, usable by the character you play, up to its level,
--- and upgrades only. Each item
--- shows where it comes from, how much better it is for your Gargoyle character (the core's
--- Upgrades.lua) and a wishlist star (the wishlist is on the website too: the Gargoyle app keeps
--- them in step). Point at an item for the game's own tooltip (hold Shift to compare it with
--- what you wear); Ctrl-click tries it on in the game's dressing room, Shift-click links it in
--- your chat box, as in your bags. An item set can be tried on whole.
+-- and upgrades only. The list of items takes the whole width: each row shows the item, where it
+-- comes from, its slot and type, its level, how much better it is for your Gargoyle character
+-- (the core's Upgrades.lua) and a wishlist star (the wishlist is on the website too: the
+-- Gargoyle app keeps them in step). Point at an item for the game's own tooltip (hold Shift to
+-- compare it with what you wear); Ctrl-click tries it on in the game's dressing room,
+-- Shift-click links it in your chat box, as in your bags. An item set can be tried on whole.
 --
 -- Its data (Data/Loot.lua) is ids, names, levels and where items come from; icons, tooltips and
 -- the items' own names come from the game. It only shows things: the dressing room and the chat
@@ -35,18 +36,18 @@ ns.Loot, G.Loot = Loot, Loot
 local ITEMS, PLACES = ns.LOOT_ITEMS or {}, ns.LOOT_PLACES or {}
 local DUNGEONS, RAIDS = {}, {}
 for _, p in ipairs(PLACES) do table.insert(p.raid and RAIDS or DUNGEONS, p) end
--- The groups on the left (title: the group; one: what a single one of its list is called).
+-- The groups, in the first dropdown (list: what the second one offers; all: its first choice).
 local CATEGORIES = {
   { key = "all", title = "Everything" },
   { key = "wish", title = "Wishlist" },
-  { key = "dungeon", title = "Dungeons", list = DUNGEONS },
-  { key = "raid", title = "Raids", list = RAIDS },
-  { key = "vendor", title = "Merchants and reputation", list = ns.LOOT_VENDORS or {} },
-  { key = "craft", title = "Professions", list = ns.LOOT_CRAFTING or {} },
-  { key = "set", title = "Item sets", list = ns.LOOT_SETS or {} },
+  { key = "dungeon", title = "Dungeons", list = DUNGEONS, all = "All dungeons" },
+  { key = "raid", title = "Raids", list = RAIDS, all = "All raids" },
+  { key = "vendor", title = "Merchants and reputation", list = ns.LOOT_VENDORS or {}, all = "All merchants and reputation" },
+  { key = "craft", title = "Professions", list = ns.LOOT_CRAFTING or {}, all = "All professions" },
+  { key = "set", title = "Item sets", list = ns.LOOT_SETS or {}, all = "All item sets" },
 }
-local LISTS, TITLES = {}, {}
-for _, c in ipairs(CATEGORIES) do LISTS[c.key], TITLES[c.key] = c.list, c.title end
+local LISTS, TITLES, ALL = {}, {}, {}
+for _, c in ipairs(CATEGORIES) do LISTS[c.key], TITLES[c.key], ALL[c.key] = c.list, c.title, c.all end
 local PLACE_KINDS = { dungeon = true, raid = true }
 local SLOTS = {
   { "", "Any slot" }, { "head", "Head" }, { "neck", "Neck" }, { "shoulder", "Shoulder" }, { "back", "Back" },
@@ -58,9 +59,11 @@ local SLOT_NAMES = { one_hand = "One-hand", two_hand = "Two-hand", main_hand = "
                      shirt = "Shirt", tabard = "Tabard" }
 for _, s in ipairs(SLOTS) do SLOT_NAMES[s[1]] = SLOT_NAMES[s[1]] or s[2] end
 local WEAPON_SLOTS = { one_hand = true, main_hand = true, two_hand = true }
-local NAV_ROWS, NAV_HEIGHT = 19, 21
-local ROWS, ROW_HEIGHT = 11, 31
-local GREEN, GREY, GOLD = "|cff3fd35c", "|cffb0b0b0", "|cffffd100"
+-- The list: rows of two lines, in columns (x and width in the row) that line up.
+local ROWS, ROW_HEIGHT, LIST_WIDTH = 12, 27, 776
+local COLUMNS = { name = { 34, 470 }, slot = { 512, 96 }, level = { 616, 48 }, gain = 76 }
+local MENU_HEIGHT = 320 -- (a dropdown's longest list before it scrolls, as the Raids tab's)
+local GREEN, GREY, GOLD, RED = "|cff3fd35c", "|cffb0b0b0", "|cffffd100", "|cffff5f5f"
 
 local byId, types = {}, {}
 -- (the core's stars, here and on the Dungeons tab: only on items in the game now)
@@ -73,9 +76,49 @@ local TYPES = { "" }
 for t in pairs(types) do TYPES[#TYPES + 1] = t end
 table.sort(TYPES)
 
+local function titleCase(text)
+  return (text:gsub("^%l", string.upper))
+end
+
+-- Item sets by class, for the second dropdown: the classes that can wear all of a set's pieces
+-- (a set some classes share is under each of them; one anyone can wear, under "Any class").
+local CLASS_ORDER = { "warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid" }
+local SET_GROUPS = {}
+do
+  local byClass, anyone, order = {}, {}, {}
+  for _, c in ipairs(CLASS_ORDER) do byClass[c], order[#order + 1] = {}, c end
+  for i, set in ipairs(LISTS.set) do
+    local shared -- (class -> true: who can wear every piece that names its classes)
+    for _, id in ipairs(set.items or {}) do
+      local it = byId[id]
+      if it and it.classes then
+        local these = {}
+        for _, c in ipairs(it.classes) do these[c] = shared == nil or shared[c] or nil end
+        shared = these
+      end
+    end
+    local any = true
+    for c in pairs(shared or {}) do
+      any = false
+      if not byClass[c] then byClass[c], order[#order + 1] = {}, c end
+    end
+    if any then anyone[#anyone + 1] = i end
+    for _, c in ipairs(order) do
+      if shared and shared[c] then table.insert(byClass[c], i) end
+    end
+  end
+  for _, c in ipairs(order) do
+    if #byClass[c] > 0 then
+      local name = LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[c:upper()] or titleCase(c)
+      SET_GROUPS[#SET_GROUPS + 1] = { name = name, sets = byClass[c] }
+    end
+  end
+  if #anyone > 0 then SET_GROUPS[#SET_GROUPS + 1] = { name = "Any class", sets = anyone } end
+end
+
 local ui = {}
-local navOffset, offset = 0, 0
-local entries, listTitle, listKey = {}, "", nil -- the list on the right: { header = text } or { item = it }
+local offset = 0
+local entries, listTitle, listKey, pickKey = {}, "", nil, nil -- the list: { header = text } or { item = it }
 
 local function plain(text)
   return (tostring(text or ""):gsub("|", "||"))
@@ -89,8 +132,12 @@ local function db()
   return GargoyleDB.loot
 end
 
-local function titleCase(text)
-  return (text:gsub("^%l", string.upper))
+-- What's picked: the group's list entry (a place, a faction, a set...) and, in a place, the boss.
+local function picked()
+  local s = db()
+  local g = LISTS[s.cat] and s.index and LISTS[s.cat][s.index]
+  local b = g and PLACE_KINDS[s.cat] and s.boss and g.bosses and g.bosses[s.boss]
+  return g, b
 end
 
 -- ---- Where an item comes from ----
@@ -236,7 +283,7 @@ local function passes(it, f)
   return true
 end
 
--- ---- The list on the right ----
+-- ---- The list ----
 
 local function whereFirst(it)
   local s = it.from and it.from[1]
@@ -265,8 +312,19 @@ local function placeItems(p, add, header)
   end
 end
 
--- The items of what's picked on the left (a whole group, or one of its list), with headers,
--- and the search and filters applied.
+local function unique(ids)
+  local seen, out = {}, {}
+  for _, id in ipairs(ids or {}) do
+    if not seen[id] then
+      seen[id] = true
+      out[#out + 1] = id
+    end
+  end
+  return out
+end
+
+-- The items of what's picked (a whole group, one of its list, or one boss), with headers, and
+-- the search and filters applied.
 local function build(f)
   local out = {}
   local function add(ids, header)
@@ -310,9 +368,12 @@ local function build(f)
     end
     return out, "Wishlist"
   end
-  local g = LISTS[cat] and LISTS[cat][index]
+  local g, boss = picked()
   if not g then return out, "" end
-  if PLACE_KINDS[cat] then
+  if boss then
+    add(unique(boss.items))
+    return out, g.name .. "  ·  " .. boss.name
+  elseif PLACE_KINDS[cat] then
     placeItems(g, add, false)
   elseif cat == "set" then
     local have = 0
@@ -329,25 +390,6 @@ end
 
 -- ---- Drawing ----
 
--- The left: each group (its list, under it, when it's open).
-local function navEntries()
-  local out = {}
-  for _, c in ipairs(CATEGORIES) do
-    if c.key == "wish" then
-      out[#out + 1] = { cat = "wish", label = string.format("Wishlist (%d)", Wishlist.Count()), group = true }
-    elseif not c.list then
-      out[#out + 1] = { cat = c.key, label = c.title, group = true }
-    else
-      local open = db().open[c.key]
-      out[#out + 1] = { cat = c.key, label = (open and "- " or "+ ") .. c.title, count = #c.list, group = true }
-      if open then
-        for i, g in ipairs(c.list) do out[#out + 1] = { cat = c.key, index = i, label = g.name, sub = true } end
-      end
-    end
-  end
-  return out
-end
-
 local function filters()
   local class, side, level = player()
   local s = db()
@@ -358,15 +400,13 @@ local function filters()
   }
 end
 
-local function showRow(row, entry, character)
+local ITEM_PARTS = { "icon", "name", "from", "slotText", "typeText", "levelText", "gain", "star" }
+
+local function showRow(row, entry, character, level)
   row.entry = entry
   local it = entry and entry.item
   row.header:SetShown(entry ~= nil and it == nil)
-  row.icon:SetShown(it ~= nil)
-  row.name:SetShown(it ~= nil)
-  row.from:SetShown(it ~= nil)
-  row.gain:SetShown(it ~= nil)
-  row.star:SetShown(it ~= nil)
+  for _, part in ipairs(ITEM_PARTS) do row[part]:SetShown(it ~= nil) end
   row.upgrade:Hide()
   row.itemID = it and it.id
   if not entry then return end
@@ -376,11 +416,11 @@ local function showRow(row, entry, character)
   end
   local name, quality, icon = itemInfo(it)
   row.icon:SetTexture(icon or 134400) -- (the game's "?" until it's loaded)
-  local facts = { SLOT_NAMES[it.slot] or it.slot }
-  if it.type then facts[#facts + 1] = titleCase(it.type) end
-  if it.level then facts[#facts + 1] = "level " .. it.level end
   row.name:SetText(qualityColor(quality) .. plain(name) .. "|r" .. (it.new and (" " .. GREEN .. "New|r") or ""))
-  row.from:SetText(GREY .. plain(table.concat(facts, ", ") .. "  ·  " .. fromText(it)) .. "|r")
+  row.from:SetText(GREY .. plain(fromText(it)) .. "|r")
+  row.slotText:SetText(plain(SLOT_NAMES[it.slot] or it.slot or ""))
+  row.typeText:SetText(it.type and (GREY .. plain(titleCase(it.type)) .. "|r") or "")
+  row.levelText:SetText(it.level and ((it.level > level and RED or GREY) .. "Level " .. it.level .. "|r") or "")
   local gain = Upgrades.Gain(it.id, character)
   row.gain:SetText(gain and (GREEN .. Upgrades.GainText(gain) .. "|r") or "")
   row.upgrade:SetShown(gain ~= nil)
@@ -411,41 +451,45 @@ local function status(character, list, title)
   return text
 end
 
+-- The dropdowns along the top: the second shown for a group with a list, the third in one
+-- dungeon or raid with more than one boss. Their menus are made again when what's picked
+-- changes (not the one being picked from: the game updates that one itself).
+local function updatePicks(fromMenu)
+  local s = db()
+  local g = picked()
+  ui.place:SetShown(LISTS[s.cat] ~= nil)
+  ui.boss:SetShown(PLACE_KINDS[s.cat] and g ~= nil and #(g.bosses or {}) > 1)
+  local key = table.concat({ s.cat, tostring(s.index), tostring(s.boss), Wishlist.Count() }, "\031")
+  if key == pickKey and fromMenu then return end
+  pickKey = key
+  for _, menu in ipairs({ ui.group, ui.place, ui.boss }) do
+    if menu ~= fromMenu then menu:GenerateMenu() end
+  end
+end
+
+-- fromMenu: true when it's for a change made on the tab (a dropdown: the one picked from).
 function Loot:Refresh(fromMenu)
   if not ui.panel then return end
   local s = db()
   local character = Upgrades.Chosen()
-  -- The left: where items come from.
-  local nav = navEntries()
-  navOffset = clamp(navOffset, #nav - NAV_ROWS)
-  for i, row in ipairs(ui.nav) do
-    local e = nav[i + navOffset]
-    row:SetShown(e ~= nil)
-    if e then
-      row.entry = e
-      row.label:SetText((e.sub and "   " or "") .. (e.group and GOLD or "") .. plain(e.label) .. (e.group and "|r" or "")
-        .. (e.count and (GREY .. " " .. e.count .. "|r") or ""))
-      row.selectedBg:SetShown(e.cat == s.cat and e.index == s.index)
-    end
-  end
-  -- The right: its items.
+  updatePicks(fromMenu)
   local f = filters()
   local wishes = 0
   for _ in ipairs(GargoyleDB.wishes) do wishes = wishes + 1 end
-  local key = table.concat({ s.cat, tostring(s.index), ui.search:GetText(), f.slot, f.type, tostring(f.usable),
-    tostring(f.myLevel), tostring(f.ups), tostring(f.level), tostring(character and character.id), Wishlist.Count(),
-    wishes }, "\031")
+  local key = table.concat({ s.cat, tostring(s.index), tostring(s.boss), ui.search:GetText(), f.slot, f.type,
+    tostring(f.usable), tostring(f.myLevel), tostring(f.ups), tostring(f.level), tostring(character and character.id),
+    Wishlist.Count(), wishes }, "\031")
   if key ~= listKey then -- (else it's the same list: scrolled, or an item's info came in)
     entries, listTitle = build(f)
     listKey = key
   end
   local title = listTitle
   offset = clamp(offset, #entries - ROWS)
-  for i, row in ipairs(ui.rows) do showRow(row, entries[i + offset], character) end
+  for i, row in ipairs(ui.rows) do showRow(row, entries[i + offset], character, f.level) end
   ui.title:SetText(plain(title))
   ui.more:SetText(#entries > ROWS and (GREY .. "Scroll for more|r") or "")
   -- Its button: open the place in the Dungeons tab, or try the set on.
-  local g = LISTS[s.cat] and s.index and LISTS[s.cat][s.index]
+  local g = picked()
   ui.openPlace:SetShown(PLACE_KINDS[s.cat] and g ~= nil and G.Journal ~= nil and G.Journal.Open ~= nil
     and G.IsEnabled("journal"))  -- (not when Dungeons is turned off)
   ui.tryOn:SetShown(s.cat == "set" and g ~= nil)
@@ -454,16 +498,18 @@ function Loot:Refresh(fromMenu)
   ui.status:SetText(status(character, entries, title))
 end
 
--- Picks a group (index nil: all of it) or one of its list. A group opens its list; picking it
--- again while it's picked closes it. The search stays: it searches what's picked.
-function Loot.Pick(cat, index)
+-- Picks a group (index nil: all of it), one of its list, and in a dungeon or raid one boss (nil:
+-- all of them). The search stays: it searches what's picked. fromMenu: the dropdown picked from.
+function Loot.Pick(cat, index, boss, fromMenu)
+  if not TITLES[cat] then return end
   local s = db()
-  if LISTS[cat] and not index then
-    if s.cat == cat and not s.index then s.open[cat] = not s.open[cat] or nil else s.open[cat] = true end
-  end
-  s.cat, s.index = cat, index
+  local list = LISTS[cat]
+  s.cat = cat
+  s.index = (list and index and list[index]) and index or nil
+  local g = PLACE_KINDS[cat] and s.index and list[s.index]
+  s.boss = (g and boss and g.bosses and g.bosses[boss]) and boss or nil
   offset = 0
-  Loot:Refresh(true)
+  Loot:Refresh(fromMenu or true)
 end
 
 -- ---- Building the tab ----
@@ -499,51 +545,129 @@ local function dropdown(parent, width, options, key, label)
   return menu
 end
 
-local function createNav(panel)
-  local nav = CreateFrame("Frame", nil, panel)
-  nav:SetPoint("TOPLEFT", 4, -4)
-  nav:SetSize(196, NAV_ROWS * NAV_HEIGHT)
-  wheel(nav, function(delta) navOffset = navOffset - delta * 3 end)
-  ui.nav = {}
-  for i = 1, NAV_ROWS do
-    local row = CreateFrame("Button", nil, nav)
-    row:SetSize(194, NAV_HEIGHT - 1)
-    row:SetPoint("TOPLEFT", 0, -(i - 1) * NAV_HEIGHT)
-    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-    row.selectedBg = row:CreateTexture(nil, "BACKGROUND")
-    row.selectedBg:SetAllPoints()
-    row.selectedBg:SetColorTexture(1, 0.82, 0, 0.16)
-    row.label = text(row, "GameFontHighlightSmall")
-    row.label:SetPoint("LEFT", 6, 0)
-    row.label:SetPoint("RIGHT", -4, 0)
-    row:SetScript("OnClick", function(self) Loot.Pick(self.entry.cat, self.entry.index) end)
-    ui.nav[i] = row
+-- The first dropdown: the groups.
+local function groupMenu(menu, root)
+  for _, c in ipairs(CATEGORIES) do
+    local label = c.key == "wish" and string.format("Wishlist (%d)", Wishlist.Count()) or c.title
+    root:CreateRadio(label, function(key) return db().cat == key end, function(key) Loot.Pick(key, nil, nil, menu) end, c.key)
   end
 end
 
-local function createTop(right)
-  ui.search = CreateFrame("EditBox", nil, right, "SearchBoxTemplate")
-  ui.search:SetSize(210, 20)
-  ui.search:SetPoint("TOPLEFT", 6, -2)
+-- The second: all of the group, or one of its list (0: all of it).
+local function placeMenu(menu, root)
+  local cat = db().cat
+  local list = LISTS[cat]
+  if not list then return end
+  local function radio(parent, label, i)
+    parent:CreateRadio(label, function(v) return db().cat == cat and (db().index or 0) == v end,
+      function(v) Loot.Pick(cat, v ~= 0 and v or nil, nil, menu) end, i)
+  end
+  root:SetScrollMode(MENU_HEIGHT) -- (it scrolls only when it's longer)
+  radio(root, ALL[cat], 0)
+  if cat == "set" then -- (by class: a list of its own beside each)
+    for _, group in ipairs(SET_GROUPS) do
+      local sub = root:CreateButton(string.format("%s (%d)", group.name, #group.sets))
+      sub:SetScrollMode(MENU_HEIGHT)
+      for _, i in ipairs(group.sets) do radio(sub, list[i].name, i) end
+    end
+    return
+  end
+  local kind
+  for i, g in ipairs(list) do
+    if cat == "vendor" and g.rep ~= kind then -- (factions first, then merchants by place)
+      kind = g.rep
+      root:CreateTitle(g.rep and "Reputation" or "Merchants, by place")
+    end
+    radio(root, g.name, i)
+  end
+end
+
+-- The third: in one dungeon or raid, all its bosses or one (0: all).
+local function bossMenu(menu, root)
+  local s = db()
+  local cat, index = s.cat, s.index
+  local g = picked()
+  if not (PLACE_KINDS[cat] and g) then return end
+  local function radio(label, i)
+    root:CreateRadio(label, function(v) return (db().boss or 0) == v end,
+      function(v) Loot.Pick(cat, index, v ~= 0 and v or nil, menu) end, i)
+  end
+  root:SetScrollMode(MENU_HEIGHT)
+  radio("All bosses", 0)
+  for i, b in ipairs(g.bosses or {}) do radio(b.name, i) end
+end
+
+-- The second dropdown's text: what's picked (a set some classes share is in several lists, and
+-- the game would show each of them).
+local function placeLabel()
+  local g = picked()
+  return g and g.name or ALL[db().cat]
+end
+
+local function createTop(panel)
+  ui.group = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
+  ui.group:SetWidth(190)
+  ui.group:SetPoint("TOPLEFT", 6, -4)
+  ui.group:SetDefaultText("Everything")
+  ui.group:SetupMenu(groupMenu)
+  ui.place = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
+  ui.place:SetWidth(220)
+  ui.place:SetPoint("LEFT", ui.group, "RIGHT", 8, 0)
+  ui.place:SetDefaultText("")
+  ui.place:SetSelectionText(placeLabel)
+  ui.place:SetupMenu(placeMenu)
+  ui.boss = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
+  ui.boss:SetWidth(180)
+  ui.boss:SetPoint("LEFT", ui.place, "RIGHT", 8, 0)
+  ui.boss:SetDefaultText("All bosses")
+  ui.boss:SetupMenu(bossMenu)
+  local function button(label, onClick, tip)
+    local b = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    b:SetSize(140, 22)
+    b:SetPoint("TOPRIGHT", -4, -5)
+    b:SetText(label)
+    b:SetScript("OnClick", onClick)
+    G.Tooltip(b, label, tip)
+    return b
+  end
+  ui.openPlace = button("Open in Dungeons", function()
+    local p = picked()
+    if p then G.Journal.Open(p.id or p.name) end
+  end, "Its bosses, their abilities and its quests, on the Dungeons tab.")
+  ui.tryOn = button("Try on the set", function()
+    local g = picked()
+    for _, id in ipairs(g and g.items or {}) do Items.Preview(id) end
+  end, "Shows every piece on your character in the game's dressing room.")
+
+  -- The search and filters.
+  ui.search = CreateFrame("EditBox", nil, panel, "SearchBoxTemplate")
+  ui.search:SetSize(200, 20)
+  ui.search:SetPoint("TOPLEFT", 12, -36)
   ui.search:SetAutoFocus(false)
   ui.search:SetMaxLetters(60)
   ui.search:HookScript("OnTextChanged", function()
     offset = 0
     Loot:Refresh(true)
   end)
-  local slots = dropdown(right, 150, SLOTS, "slot", "Any slot")
+  local slots = dropdown(panel, 130, SLOTS, "slot", "Any slot")
   slots:SetPoint("LEFT", ui.search, "RIGHT", 10, 0)
   local typeOptions = {}
   for _, t in ipairs(TYPES) do typeOptions[#typeOptions + 1] = { t, t == "" and "Any type" or titleCase(t) } end
-  local kinds = dropdown(right, 150, typeOptions, "type", "Any type")
+  local kinds = dropdown(panel, 130, typeOptions, "type", "Any type")
   kinds:SetPoint("LEFT", slots, "RIGHT", 6, 0)
+  ui.who = Upgrades.Menu(panel)
+  ui.who:SetWidth(160)
+  ui.who:SetPoint("TOPRIGHT", -4, -34)
+  local who = text(panel, "GameFontNormalSmall")
+  who:SetPoint("RIGHT", ui.who, "LEFT", -6, 0)
+  who:SetText("Upgrades for")
   ui.checks = {}
-  local x = 0
+  local x = 4
   for _, c in ipairs({ { "usable", "Usable by me", 110 }, { "myLevel", "Up to my level", 118 }, { "ups", "Upgrades only", 112 } }) do
-    local box = CreateFrame("CheckButton", nil, right, "UICheckButtonTemplate")
+    local box = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
     box:SetSize(22, 22)
-    box:SetPoint("TOPLEFT", x, -26)
-    local label = text(right, "GameFontHighlightSmall")
+    box:SetPoint("TOPLEFT", x, -62)
+    local label = text(panel, "GameFontHighlightSmall")
     label:SetPoint("LEFT", box, "RIGHT", 2, 0)
     label:SetText(c[2])
     box:SetScript("OnClick", function(self)
@@ -554,63 +678,53 @@ local function createTop(right)
     ui.checks[c[1]] = box
     x = x + c[3]
   end
-  local who = text(right, "GameFontNormalSmall")
-  who:SetPoint("TOPLEFT", x + 4, -31)
-  who:SetText("Upgrades for")
-  ui.who = Upgrades.Menu(right)
-  ui.who:SetWidth(150)
-  ui.who:SetPoint("LEFT", who, "RIGHT", 6, 0)
+  -- What the list is, beside them.
+  ui.title = text(panel, "GameFontNormal")
+  ui.title:SetPoint("TOPLEFT", x + 10, -67)
+  ui.title:SetPoint("RIGHT", -110, 0)
+  ui.more = text(panel, "GameFontDisableSmall")
+  ui.more:SetPoint("TOPRIGHT", -6, -68)
+  ui.more:SetJustifyH("RIGHT")
 end
 
-local function createList(right)
-  ui.title = text(right, "GameFontNormal")
-  ui.title:SetPoint("TOPLEFT", 6, -56)
-  ui.title:SetPoint("RIGHT", -150, 0)
-  ui.more = text(right, "GameFontDisableSmall")
-  ui.more:SetPoint("LEFT", ui.title, "RIGHT", 6, 0)
-  local function button(label, onClick, tip)
-    local b = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
-    b:SetSize(140, 20)
-    b:SetPoint("TOPRIGHT", -4, -52)
-    b:SetText(label)
-    b:SetScript("OnClick", onClick)
-    G.Tooltip(b, label, tip)
-    return b
-  end
-  ui.openPlace = button("Open in Dungeons", function()
-    local p = LISTS[db().cat][db().index]
-    if p then G.Journal.Open(p.id or p.name) end
-  end, "Its bosses, their abilities and its quests, on the Dungeons tab.")
-  ui.tryOn = button("Try on the set", function()
-    local g = LISTS.set[db().index]
-    for _, id in ipairs(g and g.items or {}) do Items.Preview(id) end
-  end, "Shows every piece on your character in the game's dressing room.")
-  local list = CreateFrame("Frame", nil, right)
-  list:SetPoint("TOPLEFT", 0, -76)
-  list:SetSize(576, ROWS * ROW_HEIGHT)
+-- A text in a column of a row: its x and width (COLUMNS), at the top or bottom of the row.
+local function column(row, font, where, x, width)
+  local fs = text(row, font)
+  fs:SetPoint(where, x, where == "TOPLEFT" and -1 or (where == "BOTTOMLEFT" and 1 or 0))
+  fs:SetWidth(width)
+  return fs
+end
+
+local function createList(panel)
+  local list = CreateFrame("Frame", nil, panel)
+  list:SetPoint("TOPLEFT", 0, -88)
+  list:SetSize(LIST_WIDTH, ROWS * ROW_HEIGHT)
   wheel(list, function(delta) offset = offset - delta * 3 end)
   ui.rows = {}
+  local name, slot, level = COLUMNS.name, COLUMNS.slot, COLUMNS.level
   for i = 1, ROWS do
     local row = CreateFrame("Button", nil, list)
-    row:SetSize(574, ROW_HEIGHT - 2)
+    row:SetSize(LIST_WIDTH, ROW_HEIGHT - 2)
     row:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_HEIGHT)
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
     row.upgrade = row:CreateTexture(nil, "BACKGROUND")
     row.upgrade:SetAllPoints()
     row.upgrade:SetColorTexture(0.25, 0.83, 0.36, 0.14)
     row.icon = row:CreateTexture(nil, "ARTWORK")
-    row.icon:SetSize(24, 24)
+    row.icon:SetSize(22, 22)
     row.icon:SetPoint("LEFT", 4, 0)
+    -- The item and where it comes from; its slot and type; its level; the upgrade; the star.
+    row.name = column(row, "GameFontHighlightSmall", "TOPLEFT", name[1], name[2])
+    row.from = column(row, "GameFontHighlightSmall", "BOTTOMLEFT", name[1], name[2])
+    row.slotText = column(row, "GameFontHighlightSmall", "TOPLEFT", slot[1], slot[2])
+    row.typeText = column(row, "GameFontHighlightSmall", "BOTTOMLEFT", slot[1], slot[2])
+    row.levelText = column(row, "GameFontHighlightSmall", "LEFT", level[1], level[2])
     row.star = Items.Star(row, 16)
     row.star:SetPoint("RIGHT", -6, 0)
     row.gain = text(row, "GameFontHighlightSmall")
-    row.gain:SetPoint("RIGHT", row.star, "LEFT", -8, 0)
-    row.name = text(row, "GameFontHighlightSmall")
-    row.name:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 6, 0)
-    row.name:SetPoint("RIGHT", row.gain, "LEFT", -6, 0)
-    row.from = text(row, "GameFontHighlightSmall")
-    row.from:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 6, -1)
-    row.from:SetPoint("RIGHT", row.gain, "LEFT", -6, 0)
+    row.gain:SetPoint("RIGHT", row.star, "LEFT", -6, 0)
+    row.gain:SetWidth(COLUMNS.gain)
+    row.gain:SetJustifyH("RIGHT")
     row.header = text(row, "GameFontNormalSmall")
     row.header:SetPoint("LEFT", 6, 0)
     row.header:SetPoint("RIGHT", -6, 0)
@@ -627,12 +741,8 @@ end
 
 function Loot:CreatePanel(panel)
   ui.panel = panel
-  createNav(panel)
-  local right = CreateFrame("Frame", nil, panel)
-  right:SetPoint("TOPLEFT", 204, -4)
-  right:SetPoint("BOTTOMRIGHT", -4, 24)
-  createTop(right)
-  createList(right)
+  createTop(panel)
+  createList(panel)
   ui.status = text(panel, "GameFontHighlightSmall", true)
   ui.status:SetPoint("BOTTOMLEFT", 14, 6)
   ui.status:SetPoint("RIGHT", -14, 0)
@@ -694,11 +804,15 @@ Loot.options = {
   { "Tell me in chat which wishlist items drop in the dungeon I go into", Loot.TellOn, Loot.SetTellOn },
 }
 
+-- What's saved (GargoyleDB.loot), checked: a group, place or boss that's gone (or a 1.0.0 beta's
+-- "place") starts on all of it. 1.0.6 and before kept which groups were open on the left.
 function Loot:OnLogin()
   local s = db()
-  s.open = type(s.open) == "table" and s.open or {}
-  if type(s.cat) ~= "string" or not TITLES[s.cat] then s.cat, s.index = "all", nil end -- (and 1.0.0 betas' "place")
+  s.open = nil
+  if type(s.cat) ~= "string" or not TITLES[s.cat] then s.cat, s.index = "all", nil end
   if type(s.index) ~= "number" or not (LISTS[s.cat] and LISTS[s.cat][s.index]) then s.index = nil end
+  local g = PLACE_KINDS[s.cat] and s.index and LISTS[s.cat][s.index]
+  if type(s.boss) ~= "number" or not (g and g.bosses and g.bosses[s.boss]) then s.boss = nil end
   for _, key in ipairs({ "slot", "type" }) do
     if type(s[key]) ~= "string" then s[key] = nil end
   end
