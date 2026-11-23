@@ -25,9 +25,7 @@ local EVENTS = { "TRAIT_CONFIG_UPDATED", "PLAYER_TALENT_UPDATE", "CHARACTER_POIN
   "PLAYER_LEVEL_UP", "PLAYER_REGEN_ENABLED" }
 local LINES = 18 -- talents listed in each column of the tab
 
-local function plain(text)
-  return (tostring(text or ""):gsub("|", "||"))
-end
+local plain = ns.Plain
 
 -- ---- The plan ----
 

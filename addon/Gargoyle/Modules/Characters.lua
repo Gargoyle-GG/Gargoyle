@@ -46,9 +46,7 @@ local PROBLEMS = {
   invalid = "not added: the website couldn't read it",
 }
 
-local function plain(text)
-  return (tostring(text or ""):gsub("|", "||"))
-end
+local plain = ns.Plain
 
 -- ---- Reading the character ----
 

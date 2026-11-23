@@ -1,10 +1,10 @@
 {
  "files": {
-  "Gargoyle_Dungeons/Data/Journal.lua": "ffb78f30844d149cf20712793eaffeac102ce3582c81187732d5f23a51bbabde",
-  "Gargoyle_Dungeons/Gargoyle_Dungeons.toc": "74f77ce587d0cd274c8a976cc17db825b69eb834ba5c1da9d43f7785d1c3ca09",
-  "Gargoyle_Dungeons/Journal.lua": "e6ac8baaa1391bdb9c96c1d3b33b5f79fd04dada6968ec1a23ecc4728e038d9d",
+  "Gargoyle_Dungeons/Data/Journal.lua": "6b231a9c79435741cd6d51541bd53e179e40fcaccc8e517f350933ecfcaef292",
+  "Gargoyle_Dungeons/Gargoyle_Dungeons.toc": "2e2840e688a43b4a83e2425ce77f701cf86f818a75fdf903b7fe6e57a8edca42",
+  "Gargoyle_Dungeons/Journal.lua": "1789b250634c2693dd34f0e178f28c98fe80fc9927b54d5ae5f4bb666969c379",
   "Gargoyle_Dungeons/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224"
  },
- "tag": "v1.9.4-addon1.0.5-tips1.0.7-col1.1.0-dun1.2.0-loot1.1.0-fish1.0.0",
- "version": "1.2.0"
+ "tag": "v1.9.5-addon1.0.6-tips1.0.7-col1.1.0-dun1.3.0-loot1.1.1-fish1.0.0",
+ "version": "1.3.0"
 }

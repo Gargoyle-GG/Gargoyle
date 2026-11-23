@@ -3,19 +3,19 @@
   "Gargoyle/Camera.lua": "2e6d1dd931e1bd22f9239cf9201704da83fe2230aee426060dd810fa17970dd8",
   "Gargoyle/Core.lua": "8a6c55e83bdc2e8deaf8f693434a4e8958b7cdd901cda6af70280d665ea84191",
   "Gargoyle/Debug.lua": "2381692f73b045d99035ec3ad5470ff18af973575e91efa0be0fb8a7a3286802",
-  "Gargoyle/Gargoyle.toc": "6a431098678a1d43f90133decce81d68df0f7c181ed6f8a07ca7790df2bfc028",
+  "Gargoyle/Gargoyle.toc": "dc54eb8d3d2cb7d740cc6969b3557ce0759b4a69f6fb4f18cd2aed279370b0da",
   "Gargoyle/Media/Badge.tga": "f1a44957f0e634c055739af3eabbe2c261fc4a6bf479727fe07c6e9120d9b224",
   "Gargoyle/Media/Portrait.tga": "6b52200f15c92fdffe1c1afc62e67c983ea586baacaa126bc7db92455097edd8",
   "Gargoyle/Media/Round.tga": "0321c1da27a4445d53deb145b6d973345c8cd82465455719fd2d7430af9ca3e1",
   "Gargoyle/MinimapButton.lua": "4fd287b79868e975538d801f9d214ead16ebaefca86f83bfd17250d13f8703bb",
   "Gargoyle/Modules/Calendar.lua": "7c2b1680f0039f437c93a4b2de7f52c5a5a095db67bdde7062fb7be8ed9c4a29",
-  "Gargoyle/Modules/Characters.lua": "50eae648c439d513807c93228964735073e77090252eeddec38869f9eca1591f",
+  "Gargoyle/Modules/Characters.lua": "352c968ef823a40dcf2314300c32bfa8feceb5ee84b992d82373fa12aec0ccb0",
   "Gargoyle/Modules/RaidAlerts.lua": "1a17d6f51d0f061d5008dbc4b396a6c70e1b598901c9371ff54698705d6acc2a",
-  "Gargoyle/Modules/Raids.lua": "3c08f252a4370780c3798d32b5e5d0029fc50f63c6114559c14f3283ee3ba3bc",
-  "Gargoyle/Modules/Talents.lua": "5ad0c60dbbbaf80d61420430a5153b18522c19fac0eab9136238f59d330cd2bb",
-  "Gargoyle/Upgrades.lua": "a642788d0d1d43783b85bede1dbe81d1e04a06e199c8bf864f07d1febc0298d9",
+  "Gargoyle/Modules/Raids.lua": "5a1d7d7c6e0d9299d74d298d5f81c87714dc2296b19f82dda62673963ee68ceb",
+  "Gargoyle/Modules/Talents.lua": "2cf58c428bd87cdbdba88640bb3bad11bbf5801aa3a262fbc521eb5db7fd319d",
+  "Gargoyle/Upgrades.lua": "33df1f9e5644718b4054201429a4a15367a4bf5f0f037cdf649eef7549410495",
   "Gargoyle/Window.lua": "439afe44653380a70181ba8c1adaf6f81d6172f1dbc8d972181aec640c5deee5"
  },
- "tag": "v1.9.4-addon1.0.5-tips1.0.7-col1.1.0-dun1.2.0-loot1.1.0-fish1.0.0",
- "version": "1.0.5"
+ "tag": "v1.9.5-addon1.0.6-tips1.0.7-col1.1.0-dun1.3.0-loot1.1.1-fish1.0.0",
+ "version": "1.0.6"
 }

@@ -3008,6 +3008,27 @@ def test_answered_wishlist_changes_are_let_go():
     assert "a wishlist change wasn't saved: the wishlist is full." in game.printed()
 
 
+def test_wishlist_has_agrees_with_the_whole_list():
+    # Wishlist.Has works one item out without building the list: it must say what Items says.
+    saved = """GargoyleDB = { wishes = {
+      { id = "w1-0001", character = 11, item = 872, on = true, at = %d },
+      { id = "w1-0002", character = 11, item = 872, on = false, at = %d },
+      { id = "w1-0003", character = 11, item = 5187, on = false, at = %d },
+      { id = "w1-0004", character = 11, item = 5193, on = true, at = %d },
+      { id = "w1-0005", character = 12, item = 5191, on = true, at = %d } } }""" % ((NOW - 60,) * 5)
+    game = Game(sync_lua(WISH_API, {}), saved, journal=JOURNAL, before=ITEMS)
+    game.lua.execute("""table.insert(GargoyleDB.wishes, { id = "w1-0006", character = 11, item = 5191, on = true, at = 1 })
+      Gargoyle.sync.done["w1-0006"] = "saved" -- (answered since: not a change any more)""")
+    agree = game.lua.eval("""function(id, character)
+      local c = character and Gargoyle.sync.characters[character]
+      return Gargoyle.Wishlist.Has(id, c), Gargoyle.Wishlist.Items(c)[id] == true end""")
+    for character in (None, 1, 2):
+        for item in (872, 5187, 5193, 5191, 9999):
+            has, listed = agree(item, character)
+            assert has == listed, (character, item)
+    assert agree(5193, None) == (True, True) and agree(5187, None) == (False, False)
+
+
 def test_ctrl_and_shift_click_an_item_and_what_you_wear():
     game = journal_game()
     row = loot_row(game, "Rockslicer")

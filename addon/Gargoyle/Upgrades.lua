@@ -128,8 +128,15 @@ function Wishlist.Items(character)
   return items
 end
 
+-- (Wishlist.Items for one item, without building the whole list: it's asked for each item tooltip and star.)
 function Wishlist.Has(itemID, character)
-  return Wishlist.Items(character)[itemID] == true
+  character = character or Upgrades.Chosen()
+  if not character then return false end
+  local on = (character.wishlist or {})[itemID] ~= nil
+  for _, w in ipairs(GargoyleDB.wishes) do
+    if w.character == character.id and w.item == itemID and not ns.sync.done[w.id] then on = w.on == true end
+  end
+  return on
 end
 
 function Wishlist.Count(character)

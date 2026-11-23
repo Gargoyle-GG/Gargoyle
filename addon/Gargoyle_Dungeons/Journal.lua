@@ -57,9 +57,7 @@ local offset, bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 
 local here -- the dungeon you're in, if it's one of them
 local ui = {}
 
-local function plain(text)
-  return (tostring(text or ""):gsub("|", "||"))
-end
+local plain = G.Plain
 
 local function clamp(value, most)
   return math.max(0, math.min(value, most))
@@ -538,9 +536,14 @@ function Journal.ShowView(key)
   Journal:Refresh(true)
 end
 
-function Journal.PickPlace(i)
+-- A place shown from the start: its first boss and quest, every list scrolled to the top.
+local function showPlace(i)
   selected, boss, quest, step, followStep = i, 1, 1, nil, true
   bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
+end
+
+function Journal.PickPlace(i)
+  showPlace(i)
   Journal:Refresh()
 end
 
@@ -561,8 +564,7 @@ end
 function Journal.Open(id)
   local i = placeIndex(id)
   if not i then return end
-  selected, boss, quest, step, followStep = i, 1, 1, nil, true
-  bossOffset, lootOffset, abilityOffset, questOffset, chainOffset = 0, 0, 0, 0, 0
+  showPlace(i)
   GargoyleDB.journal.view = "bosses"
   G.OpenWindow("journal")
 end

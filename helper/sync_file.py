@@ -150,46 +150,37 @@ def toc(interface):
             "\nData.lua\n")
 
 
-def outbox(saved):
-    """Signups made in game and not yet confirmed, from a read GargoyleDB file
-    (lua_io.read_saved), as the website's /api/app/signups wants them."""
+def _waiting(saved, field):
+    """The changes made in game in one of GargoyleDB's lists (outbox, wishes, newRaids), from a
+    read GargoyleDB file (lua_io.read_saved): each table with a proper id (anything else is skipped)."""
     db = saved.get("GargoyleDB") if isinstance(saved, dict) else None
-    actions = []
-    for a in _list(db.get("outbox")) if isinstance(db, dict) else []:
-        if not isinstance(a, dict) or not isinstance(a.get("id"), str) or not ACTION_ID.match(a["id"]):
-            continue
-        actions.append({"id": a["id"], "raid": _int(a.get("raid")), "character": _int(a.get("character")),
-                        "status": _text(a.get("status"), 10), "role": _text(a.get("role"), 10),
-                        "note": _text(a.get("note"), 200) or "", "at": _int(a.get("at"))})
-    return actions
+    return [e for e in (_list(db.get(field)) if isinstance(db, dict) else [])
+            if isinstance(e, dict) and isinstance(e.get("id"), str) and ACTION_ID.match(e["id"])]
+
+
+def outbox(saved):
+    """Signups made in game and not yet confirmed, as the website's /api/app/signups wants them."""
+    return [{"id": a["id"], "raid": _int(a.get("raid")), "character": _int(a.get("character")),
+             "status": _text(a.get("status"), 10), "role": _text(a.get("role"), 10),
+             "note": _text(a.get("note"), 200) or "", "at": _int(a.get("at"))}
+            for a in _waiting(saved, "outbox")]
 
 
 def wishes(saved):
     """Wishlist stars clicked in game and not yet confirmed (GargoyleDB.wishes), as the
-    website's /api/app/wishlist wants them, from a read GargoyleDB file."""
-    db = saved.get("GargoyleDB") if isinstance(saved, dict) else None
-    out = []
-    for w in _list(db.get("wishes")) if isinstance(db, dict) else []:
-        if (not isinstance(w, dict) or not isinstance(w.get("id"), str) or not ACTION_ID.match(w["id"])
-                or not isinstance(w.get("on"), bool) or _int(w.get("item")) is None):
-            continue
-        out.append({"id": w["id"], "character": _int(w.get("character")), "item": w["item"], "on": w["on"],
-                    "at": _int(w.get("at"))})
-    return out
+    website's /api/app/wishlist wants them."""
+    return [{"id": w["id"], "character": _int(w.get("character")), "item": w["item"], "on": w["on"],
+             "at": _int(w.get("at"))}
+            for w in _waiting(saved, "wishes") if isinstance(w.get("on"), bool) and _int(w.get("item")) is not None]
 
 
 def new_raids(saved):
     """Raids officers made in game and the website hasn't confirmed yet (GargoyleDB.newRaids),
-    as the website's /api/app/raids wants them, from a read GargoyleDB file."""
-    db = saved.get("GargoyleDB") if isinstance(saved, dict) else None
-    raids = []
-    for r in _list(db.get("newRaids")) if isinstance(db, dict) else []:
-        if not isinstance(r, dict) or not isinstance(r.get("id"), str) or not ACTION_ID.match(r["id"]):
-            continue
-        raids.append({"id": r["id"], "guild": _int(r.get("guild")), "title": _text(r.get("title"), 80) or "",
-                      "start": _int(r.get("start")), "size": _int(r.get("size")),
-                      "notes": _text(r.get("notes"), 1000) or "", "at": _int(r.get("at"))})
-    return raids
+    as the website's /api/app/raids wants them."""
+    return [{"id": r["id"], "guild": _int(r.get("guild")), "title": _text(r.get("title"), 80) or "",
+             "start": _int(r.get("start")), "size": _int(r.get("size")),
+             "notes": _text(r.get("notes"), 1000) or "", "at": _int(r.get("at"))}
+            for r in _waiting(saved, "newRaids")]
 
 
 def _parts(value, fields, limit):

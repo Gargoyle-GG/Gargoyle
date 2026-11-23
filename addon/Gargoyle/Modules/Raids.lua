@@ -44,11 +44,7 @@ local MAX_MADE = 20 -- new raids waiting to sync at once
 local SIZES = { 10, 20, 25, 40 }
 local MINUTES = { 0, 15, 30, 45 }
 
--- Text typed by other players, shown as it is: "|" starts the game's color, icon and link
--- codes, so it's doubled to show a plain "|".
-local function plain(text)
-  return (tostring(text or ""):gsub("|", "||"))
-end
+local plain = ns.Plain
 
 local function isOneOf(value, options)
   for _, v in ipairs(options) do

@@ -557,25 +557,28 @@ class App:
         self.refreshed = time.time()
         config, syncer = self.config, self.syncer
         folder = syncer.game_folder
-        installed = addon_install.installed_version(folder) if folder else None
-        linked_folder = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / addon_install.NAME)
+        # Each addon's installed version (its .toc) and whether its folder is a link, looked at once.
+        found = {key: addon_install.installed_version(folder, name) if folder else None
+                 for key, name in addon_install.ADDONS.items()}
+        links = {key: bool(folder) and addon_install.is_linked(addon_install.addons(folder) / name)
+                 for key, name in addon_install.ADDONS.items()}
+        installed, linked_folder = found["addon"], links["addon"]
         dead_link = bool(folder) and addon_install.is_dead_link(addon_install.addons(folder) / addon_install.NAME)
         hidden_link = bool(folder) and addon_install.is_hidden_link(addon_install.addons(folder) / addon_install.NAME)
         offer = addon_install.offer(self.versions)
         update = offer["version"] if offer and installed and addon_install.newer(offer["version"], installed) else None
         helper = config.get("helper") is True
-        gatherer = addon_install.installed_version(folder, addon_install.COLLECTOR) if folder else None
+        gatherer = found["collector"]
         # The optional addons there, and the first one with an update out (when it's wanted).
         extras, extra_update = [], None
         for key, title, _ in addon_install.TICKED + (("collector", "Data Collector", False),):
-            name = addon_install.ADDONS[key]
-            have = addon_install.installed_version(folder, name) if folder else None
+            have = found[key]
             if have:
                 extras.append(f"{title} {have}")
             out = addon_install.offer(self.versions, key)
             wanted = helper if key == "collector" else self.wanted(key)
             if (extra_update is None and wanted and have and out and addon_install.newer(out["version"], have)
-                    and not addon_install.is_linked(addon_install.addons(folder) / name)):
+                    and not links[key]):
                 extra_update = f"{title} {out['version']} is out."
         with_tips = "".join(f" · {e}" for e in extras)
 
@@ -630,7 +633,7 @@ class App:
                 note = ""
             game.show("ok", f"Addon {installed}", f"{note}Game folder: {folder.name}{with_tips}", check)
         self.folder_text.configure(text=str(folder) if folder else "Not found yet")
-        self.show_addons(folder, helper)
+        self.show_addons(folder, helper, found, links)
 
         # The Data Collector (Settings)
         for widget in self.collector_widgets:
@@ -713,8 +716,9 @@ class App:
         if self.tray:
             self.tray.title = "Gargoyle" + (f": synced {ago(last['at'])}" if last and config.token else "")
 
-    def show_addons(self, folder, helper):
-        """The Addons page: how each addon is, and Update all when there's something to install."""
+    def show_addons(self, folder, helper, found, links):
+        """The Addons page: how each addon is, and Update all when there's something to install.
+        (`found` and `links`, from refresh: each addon's installed version, and whether it's linked.)"""
         ready = behind = 0  # (wanted addons with a newer version out, and how many of them are installed)
         for key, (row, what, detail) in self.addon_rows.items():
             if key == "collector" and not helper:  # (for helpers only)
@@ -722,10 +726,8 @@ class App:
                 continue
             if not row.winfo_manager():
                 row.pack(fill="x", before=self.addons_end)
-            name = addon_install.ADDONS[key]
-            have = addon_install.installed_version(folder, name) if folder else None
-            linked = bool(folder) and addon_install.is_linked(addon_install.addons(folder) / name)
-            hidden = linked and addon_install.is_hidden_link(addon_install.addons(folder) / name)
+            have, linked = found[key], links[key]
+            hidden = linked and addon_install.is_hidden_link(addon_install.addons(folder) / addon_install.ADDONS[key])
             out = addon_install.offer(self.versions, key)
             wanted = key in ("addon", "collector") or self.wanted(key)
             state, text, more = overview.addon_state(have, out["version"] if out else None, wanted, linked, hidden)

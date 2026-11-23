@@ -120,9 +120,7 @@ local ui = {}
 local offset = 0
 local entries, listTitle, listKey, pickKey = {}, "", nil, nil -- the list: { header = text } or { item = it }
 
-local function plain(text)
-  return (tostring(text or ""):gsub("|", "||"))
-end
+local plain = G.Plain
 
 local function clamp(value, most)
   return math.max(0, math.min(value, most))
